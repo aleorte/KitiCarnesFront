@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { dashboardApi, ordersApi } from '../../api/services';
+import { BRAND_NAME } from '../../brand';
 import { PageHeader, Skeleton } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
+import { ORDER_STATUS_LABEL } from '../../types/api';
 import { dateOnly, formatMoney } from '../../utils/format';
 
 export function DashboardPage() {
@@ -11,7 +13,7 @@ export function DashboardPage() {
   const evolution = useQuery({ queryKey: ['evolution'], queryFn: () => dashboardApi.evolution('day') });
   const todayOrders = useQuery({
     queryKey: ['orders-today'],
-    queryFn: () => ordersApi.list({ deliveryDate: dateOnly(), limit: 8 }),
+    queryFn: () => ordersApi.list({ from: dateOnly(), to: dateOnly(), limit: 8 }),
   });
 
   if (overview.isLoading || !overview.data) {
@@ -31,7 +33,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Hoy en la carnicería" title="Tablero" description="Lo que importa para despachar, cobrar y reponer." />
+      <PageHeader eyebrow={BRAND_NAME} title="Tablero" description="Lo que importa para despachar, cobrar y reponer." />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map(([label, value]) => (
           <div key={label} className="rounded-3xl bg-cream p-5">
@@ -43,6 +45,28 @@ export function DashboardPage() {
           <div className="rounded-3xl bg-ink p-5 text-cream">
             <p className="text-xs uppercase tracking-[0.16em] text-gold">Ganancia estimada del mes</p>
             <p className="mt-2 font-display text-3xl">{formatMoney(data.financial.monthEstimatedProfit)}</p>
+            {data.financial.monthItemsWithoutCost ? (
+              <p className="mt-2 text-xs text-cream/70">
+                {data.financial.monthItemsWithoutCost} renglón(es) vendidos sin coste de compra
+                registrado: la ganancia real puede ser menor.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {data.stock ? (
+          <div className="rounded-3xl bg-cream p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Valor de stock</p>
+            <p className="mt-2 font-display text-3xl">{formatMoney(data.stock.estimatedValue)}</p>
+            <p className="mt-1 text-sm text-ink-soft">{data.stock.products} productos en inventario</p>
+          </div>
+        ) : null}
+        {data.businessWeek ? (
+          <div className="rounded-3xl bg-cream p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Pedidos de la semana</p>
+            <p className="mt-2 font-display text-3xl">{data.businessWeek.orders}</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              {data.businessWeek.label} · {data.businessWeek.pending} pendientes · {data.businessWeek.customers} clientes
+            </p>
           </div>
         ) : null}
       </div>
@@ -55,13 +79,13 @@ export function DashboardPage() {
                 <XAxis dataKey="period" hide />
                 <YAxis hide />
                 <Tooltip />
-                <Area dataKey="total" stroke="#9b1d1d" fill="#9b1d1d33" />
+                <Area dataKey="total" stroke="#7A1F2B" fill="#7A1F2B33" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
         <div className="rounded-3xl bg-cream p-5 lg:col-span-2">
-          <h2 className="font-display text-2xl">Entregas de hoy</h2>
+          <h2 className="font-display text-2xl">Pedidos de hoy</h2>
           <ul className="mt-4 space-y-3 text-sm">
             {todayOrders.data?.data.length ? (
               todayOrders.data.data.map((order) => (
@@ -69,14 +93,14 @@ export function DashboardPage() {
                   <span>
                     {order.customer?.firstName} {order.customer?.lastName}
                     <span className="block text-ink-soft/70">
-                      {order.deliveryWindowStart}-{order.deliveryWindowEnd}
+                      {order.customer?.phone} · {ORDER_STATUS_LABEL[order.status]}
                     </span>
                   </span>
-                  <span>{formatMoney(order.estimatedTotal)}</span>
+                  <span>{formatMoney(order.finalTotal ?? order.estimatedTotal)}</span>
                 </li>
               ))
             ) : (
-              <li className="text-ink-soft">No hay entregas cargadas para hoy.</li>
+              <li className="text-ink-soft">Todavía no entraron pedidos hoy.</li>
             )}
           </ul>
         </div>

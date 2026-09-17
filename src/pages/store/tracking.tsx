@@ -79,31 +79,53 @@ export function OrderTrackingPage({ confirmation = false }: { confirmation?: boo
             ))}
           </ol>
           <ul className="space-y-2 text-sm">
-            {order.data.items.map((item) => (
-              <li key={item.id} className="flex justify-between">
-                <span>
-                  {item.productName}
-                  {item.saleUnit === 'KILOGRAM' ? (
-                    <>
-                      {' '}
-                      · Solicitado: {formatQty(item.requestedKg ?? item.quantity, 'KILOGRAM')}
-                      {item.actualKg ? ` · Real: ${formatQty(item.actualKg, 'KILOGRAM')}` : ' · Real: Pendiente'}
-                    </>
-                  ) : (
-                    <> · {formatQty(item.quantity, 'UNIT')}</>
-                  )}
-                </span>
-                <span>{formatMoney(item.estimatedLineTotal)}</span>
-              </li>
-            ))}
+            {order.data.items.map((item) => {
+              const pendingFinal = item.finalLineTotal == null;
+              const estimated =
+                item.estimatedLineTotalMax && item.estimatedLineTotalMax !== item.estimatedLineTotal
+                  ? `${formatMoney(item.estimatedLineTotal)} – ${formatMoney(item.estimatedLineTotalMax)}`
+                  : formatMoney(item.estimatedLineTotal);
+              return (
+                <li key={item.id} className="flex justify-between gap-3">
+                  <span>
+                    {item.productName}
+                    {item.saleUnit === 'KILOGRAM' || item.estimatedMinKg ? (
+                      <>
+                        {' '}
+                        · {item.estimatedMinKg ? `${item.quantity} u. · estimado ${item.estimatedMinKg}–${item.estimatedMaxKg} kg` : `Solicitado: ${formatQty(item.requestedKg ?? item.quantity, 'KILOGRAM')}`}
+                        {item.actualKg ? ` · Real: ${formatQty(item.actualKg, 'KILOGRAM')}` : ' · Peso real: pendiente'}
+                      </>
+                    ) : (
+                      <> · {formatQty(item.quantity, 'UNIT')}</>
+                    )}
+                  </span>
+                  <span>
+                    {pendingFinal ? estimated : formatMoney(item.finalLineTotal)}
+                    {pendingFinal ? <span className="block text-xs text-ink-soft">estimado</span> : <span className="block text-xs text-ok">final</span>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
           <div className="flex justify-between border-t border-line pt-4">
-            <span>Total estimado</span>
-            <span className="font-display text-3xl">{formatMoney(order.data.finalTotal ?? order.data.estimatedTotal)}</span>
+            <span>{order.data.finalTotal ? 'Total final' : 'Total estimado'}</span>
+            <span className="font-display text-3xl">
+              {order.data.finalTotal
+                ? formatMoney(order.data.finalTotal)
+                : order.data.estimatedTotalMax && order.data.estimatedTotalMax !== order.data.estimatedTotal
+                  ? `${formatMoney(order.data.estimatedTotal)} – ${formatMoney(order.data.estimatedTotalMax)}`
+                  : formatMoney(order.data.estimatedTotal)}
+            </span>
           </div>
-          <p className="text-sm text-ink-soft">
-            Entrega {formatDate(order.data.estimatedDeliveryDate)} · {order.data.deliveryWindowStart} a {order.data.deliveryWindowEnd}
-          </p>
+          {order.data.finalTotal == null ? (
+            <p className="text-sm font-medium text-warn">
+              El importe final se calcula cuando la carnicería registra el peso real. Todavía no está cobrado.
+            </p>
+          ) : (
+            <p className="text-sm text-ink-soft">
+              Pedido del {formatDate(order.data.orderedAt)}. Coordinamos la entrega con vos.
+            </p>
+          )}
         </div>
       ) : null}
     </div>
@@ -145,9 +167,7 @@ export function TrackSearchPage() {
         <div className="mt-6 rounded-3xl bg-cream p-5">
           <StatusBadge status={order.data.status} />
           <p className="mt-3 font-display text-2xl">{formatMoney(order.data.estimatedTotal)}</p>
-          <p className="text-sm text-ink-soft">
-            {formatDate(order.data.estimatedDeliveryDate)} · {order.data.deliveryWindowStart}-{order.data.deliveryWindowEnd}
-          </p>
+          <p className="text-sm text-ink-soft">Pedido del {formatDate(order.data.orderedAt)}</p>
         </div>
       ) : null}
       {order.isError ? <p className="mt-4 text-blood">{order.error.message}</p> : null}

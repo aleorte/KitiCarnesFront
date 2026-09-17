@@ -3,19 +3,19 @@
 @theme {
   --font-display: "Fraunces", "Times New Roman", serif;
   --font-sans: "Manrope", "Segoe UI", sans-serif;
-  --color-ink: #1c1410;
-  --color-ink-soft: #3a2f28;
-  --color-paper: #f3ece3;
-  --color-paper-2: #e7d8c7;
-  --color-cream: #fffaf4;
-  --color-blood: #9b1d1d;
-  --color-blood-dark: #6f1414;
-  --color-gold: #c4a36a;
+  --color-ink: #1c1c1c;
+  --color-ink-soft: #3d3d3d;
+  --color-paper: #efe4d4;
+  --color-paper-2: #e4d4bb;
+  --color-cream: #f5ebdd;
+  --color-blood: #7a1f2b;
+  --color-blood-dark: #a52a35;
+  --color-gold: #d8c5a9;
   --color-forest: #2f4338;
-  --color-line: #e0d3c4;
+  --color-line: #d8c5a9;
   --color-ok: #2f6b4f;
   --color-warn: #a15c12;
-  --shadow-card: 0 18px 40px -28px rgb(28 20 16 / 0.45);
+  --shadow-card: 0 18px 40px -28px rgb(28 28 28 / 0.45);
 }
 
 html,
@@ -41,7 +41,7 @@ body.modal-open {
 }
 
 .modal-overlay {
-  background-color: rgb(28 20 16 / 0.38);
+  background-color: rgb(28 28 28 / 0.42);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }

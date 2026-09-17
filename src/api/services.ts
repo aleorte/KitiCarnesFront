@@ -12,12 +12,16 @@ import type {
   PaymentMethod,
   PaymentStatus,
   Product,
+  Purchase,
   Sale,
   SaleUnit,
+  StockMovement,
+  StockOverview,
   Supplier,
+  SupplierCategory,
+  SupplierProduct,
   UserAccount,
   WeeklyOrders,
-  WeeklyPlanning,
   WeeklyProductSources,
   WholesaleOrder,
 } from '../types/api';
@@ -46,8 +50,25 @@ export const productsApi = {
   create: (body: Record<string, unknown>) => api.post<Product>('/products', body),
   update: (id: string, body: Record<string, unknown>) => api.patch<Product>(`/products/${id}`, body),
   remove: (id: string) => api.delete<Product>(`/products/${id}`),
+  deactivate: (id: string) => api.post<Product>(`/products/${id}/deactivate`, {}),
+  activate: (id: string) => api.post<Product>(`/products/${id}/activate`, {}),
+  usage: (id: string) =>
+    api.get<{ orders: number; sales: number; purchases: number; stockMovements: number }>(
+      `/products/${id}/usage`,
+    ),
+  archive: (id: string) => api.post<Product>(`/products/${id}/archive`, {}),
   adjustStock: (id: string, quantityDelta: string, reason?: string) =>
     api.post<Product>(`/products/${id}/stock`, { quantityDelta, reason }),
+  stockMovements: (id: string) => api.get<StockMovement[]>(`/products/${id}/stock-movements`),
+};
+
+export const stockApi = {
+  overview: () => api.get<StockOverview>('/stock/overview'),
+  movements: (params: Record<string, string | number | undefined> = {}) =>
+    api.get<Paginated<StockMovement>>(`/stock/movements${toQuery(params)}`),
+  adjust: (productId: string, quantityDelta: string, reason?: string) =>
+    api.post<Product>(`/stock/${productId}/adjust`, { quantityDelta, reason }),
+  clear: (productId: string) => api.post<Product>(`/stock/${productId}/clear`, {}),
 };
 
 export const categoriesApi = {
@@ -55,17 +76,41 @@ export const categoriesApi = {
     api.get<Paginated<Category>>(`/categories${toQuery({ limit: 100, ...params })}`),
   one: (id: string) => api.get<Category>(`/categories/${id}`),
   create: (body: Record<string, unknown>) => api.post<Category>('/categories', body),
-  update: (id: string, body: Record<string, unknown>) => api.patch<Category>(`/categories/${id}`, body),
-  remove: (id: string, reassignTo?: string) =>
-    api.delete<Category>(`/categories/${id}${toQuery({ reassignTo })}`),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<Category>(`/categories/${id}`, body),
+  /** Los productos asociados sobreviven sin categoría. */
+  remove: (id: string) =>
+    api.delete<Category & { detachedProducts: number }>(`/categories/${id}`),
+};
+
+export const supplierCategoriesApi = {
+  list: (params: Record<string, string | number | boolean | undefined> = {}) =>
+    api.get<Paginated<SupplierCategory>>(`/supplier-categories${toQuery({ limit: 100, ...params })}`),
+  one: (id: string) => api.get<SupplierCategory>(`/supplier-categories/${id}`),
+  create: (body: Record<string, unknown>) =>
+    api.post<SupplierCategory>('/supplier-categories', body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<SupplierCategory>(`/supplier-categories/${id}`, body),
+  /** Los proveedores asociados sobreviven sin categoría. */
+  remove: (id: string) =>
+    api.delete<SupplierCategory & { detachedSuppliers: number }>(`/supplier-categories/${id}`),
 };
 
 export const customersApi = {
-  list: (params: Record<string, string | number | undefined> = {}) =>
+  list: (params: Record<string, string | number | boolean | undefined> = {}) =>
     api.get<Paginated<Customer>>(`/customers${toQuery(params)}`),
   one: (id: string) => api.get<Customer>(`/customers/${id}`),
   create: (body: Record<string, unknown>) => api.post<Customer>('/customers', body),
-  update: (id: string, body: Record<string, unknown>) => api.patch<Customer>(`/customers/${id}`, body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<Customer>(`/customers/${id}`, body),
+  /**
+   * El cliente se borra sólo si no tiene historial. Si tiene pedidos o ventas
+   * se archiva para no romper los registros históricos.
+   */
+  remove: (id: string) =>
+    api.delete<Customer & { strategy: 'deleted' | 'archived'; orders: number; sales: number }>(
+      `/customers/${id}`,
+    ),
   history: (id: string) => api.get<{ orders: Order[]; sales: Sale[] }>(`/customers/${id}/history`),
 };
 
@@ -74,9 +119,9 @@ export const ordersApi = {
     api.get<Paginated<Order>>(`/orders${toQuery(params)}`),
   one: (id: string) => api.get<Order>(`/orders/${id}`),
   create: (body: Record<string, unknown>) => api.post<Order>('/orders', body),
-  updateStatus: (id: string, status: OrderStatus) => api.patch<Order>(`/orders/${id}/status`, { status }),
-  updateWeight: (id: string, itemId: string, actualKg: string) =>
-    api.patch<Order>(`/orders/${id}/items/${itemId}/actual-weight`, { actualKg }),
+  updateStatus: (id: string, status: OrderStatus) =>
+    api.patch<Order>(`/orders/${id}/status`, { status }),
+  /** Kilos realmente pesados al preparar el pedido. */
   updateWeights: (id: string, items: Array<{ itemId: string; actualKg: string }>) =>
     api.patch<Order>(`/orders/${id}/actual-weights`, { items }),
 };
@@ -105,14 +150,30 @@ export const suppliersApi = {
     api.get<Paginated<Supplier>>(`/suppliers${toQuery(params)}`),
   one: (id: string) => api.get<Supplier>(`/suppliers/${id}`),
   create: (body: Record<string, unknown>) => api.post<Supplier>('/suppliers', body),
-  update: (id: string, body: Record<string, unknown>) => api.patch<Supplier>(`/suppliers/${id}`, body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<Supplier>(`/suppliers/${id}`, body),
   remove: (id: string) => api.delete<Supplier>(`/suppliers/${id}`),
+  linkProduct: (
+    id: string,
+    body: { productId: string; purchasePrice?: string; minPurchaseQty?: string; notes?: string },
+  ) =>
+    api.post<SupplierProduct>(`/suppliers/${id}/products`, body),
+  unlinkProduct: (id: string, productId: string) =>
+    api.delete<{ supplierId: string; productId: string }>(`/suppliers/${id}/products/${productId}`),
+};
+
+export const purchasesApi = {
+  list: (params: Record<string, string | number | undefined> = {}) =>
+    api.get<Paginated<Purchase>>(`/purchases${toQuery(params)}`),
+  one: (id: string) => api.get<Purchase>(`/purchases/${id}`),
+  create: (body: Record<string, unknown>) => api.post<Purchase>('/purchases', body),
 };
 
 export const usersApi = {
   list: () => api.get<Paginated<UserAccount>>('/users?limit=100'),
   create: (body: Record<string, unknown>) => api.post<UserAccount>('/users', body),
-  update: (id: string, body: Record<string, unknown>) => api.patch<UserAccount>(`/users/${id}`, body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<UserAccount>(`/users/${id}`, body),
   remove: (id: string) => api.delete<UserAccount>(`/users/${id}`),
 };
 
@@ -122,27 +183,27 @@ export const dashboardApi = {
     api.get<{ series: Array<{ period: string; total: string }> }>(
       `/dashboard/sales-evolution${toQuery({ granularity })}`,
     ),
-  topProducts: () =>
-    api.get<DashboardOverview['topProducts']>('/dashboard/top-products'),
+  topProducts: () => api.get<DashboardOverview['topProducts']>('/dashboard/top-products'),
 };
 
-export const planningApi = {
-  week: (weekStart: string, status?: OrderStatus) =>
-    api.get<WeeklyPlanning>(`/weekly-planning${toQuery({ weekStart, status })}`),
-  markPrepared: (id: string) => api.patch<Order>(`/weekly-planning/orders/${id}/prepared`),
-  markDelivered: (id: string) => api.patch<Order>(`/weekly-planning/orders/${id}/delivered`),
-  updateStatus: (id: string, status: OrderStatus) =>
-    api.patch<Order>(`/weekly-planning/orders/${id}/status`, { status }),
+export type WholesaleItemInput = {
+  productId: string;
+  quantityToOrder: string;
+  supplierId?: string;
+  /** Precio de coste de esta compra concreta, no del producto. */
+  unitCost?: string;
 };
 
 export const weeklyOrdersApi = {
-  week: (params: {
-    weekStart?: string;
-    status?: OrderStatus | '';
-    search?: string;
-    page?: number;
-    limit?: number;
-  } = {}) =>
+  week: (
+    params: {
+      weekStart?: string;
+      status?: OrderStatus | '';
+      search?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) =>
     api.get<WeeklyOrders>(
       `/weekly-orders${toQuery({
         weekStart: params.weekStart,
@@ -155,17 +216,45 @@ export const weeklyOrdersApi = {
   productSources: (productId: string, weekStart?: string) =>
     api.get<WeeklyProductSources>(`/weekly-orders/products/${productId}${toQuery({ weekStart })}`),
   exportCsv: (weekStart?: string) => fetchText(`/weekly-orders/export${toQuery({ weekStart })}`),
+  /** Confirma en una transacción todos los pedidos pendientes de la semana. */
+  confirmWeekOrders: (weekStart?: string) =>
+    api.post<{ weekStart: string; weekEnd: string; confirmed: number; orderIds: string[] }>(
+      '/weekly-orders/confirm-orders',
+      { weekStart },
+    ),
   upsertWholesale: (body: {
     weekStart?: string;
     notes?: string;
-    items: Array<{ productId: string; quantityToOrder: string }>;
+    supplierId?: string;
+    items: WholesaleItemInput[];
   }) => api.post<WholesaleOrder>('/weekly-orders/wholesale', body),
   updateWholesale: (
     id: string,
-    body: { notes?: string; items?: Array<{ productId: string; quantityToOrder: string }> },
+    body: { notes?: string; supplierId?: string; items?: WholesaleItemInput[] },
   ) => api.patch<WholesaleOrder>(`/weekly-orders/wholesale/${id}`, body),
-  confirmWholesale: (id: string) => api.post<WholesaleOrder>(`/weekly-orders/wholesale/${id}/confirm`),
-  receiveWholesale: (id: string) => api.post<WholesaleOrder>(`/weekly-orders/wholesale/${id}/receive`),
+  confirmWholesale: (id: string) =>
+    api.post<WholesaleOrder>(`/weekly-orders/wholesale/${id}/confirm`),
+  assignSuppliers: (
+    id: string,
+    items: Array<{ productId: string; supplierId: string; unitCost?: string }>,
+  ) => api.patch<WholesaleOrder>(`/weekly-orders/wholesale/${id}/suppliers`, { items }),
+  generatePurchases: (
+    id: string,
+    items: Array<{ productId: string; receivedQty: string }>,
+  ) => api.post<Purchase[]>(`/weekly-orders/wholesale/${id}/purchases`, { items }),
+  excludeProduct: (productId: string, weekStart?: string) =>
+    api.post<{ productId: string; productName: string; cancelledItems: number; ordersUpdated: number }>(
+      `/weekly-orders/products/${productId}/exclude`,
+      { weekStart },
+    ),
+  resetWeek: (weekStart?: string) =>
+    api.post<{
+      weekStart: string;
+      weekEnd: string;
+      wholesaleDeleted: boolean;
+      purchasesDeleted: number;
+      ordersReverted: number;
+    }>('/weekly-orders/reset', { weekStart }),
 };
 
 export type { SaleUnit, PaymentStatus };

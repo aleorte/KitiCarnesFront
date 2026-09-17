@@ -42,20 +42,35 @@ export type Category = {
   _count?: { products: number };
 };
 
+export type SupplierCategory = {
+  id: string;
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: { suppliers: number };
+};
+
 export type Product = {
   id: string;
   name: string;
   description?: string | null;
   imageUrl?: string | null;
-  purchasePrice?: string;
   salePrice: string;
   saleUnit: SaleUnit;
-  weightKg?: string | null;
+  /** Rango estimado por pieza. Si está, el cliente pide unidades y se cobra por kg. */
+  estimatedMinKg?: string | null;
+  estimatedMaxKg?: string | null;
   stock: string;
-  minStock?: string;
   isActive: boolean;
-  categoryId: string;
-  category?: Category;
+  /** Baja lógica: deja el catálogo y conserva pedidos, ventas y stock. */
+  deletedAt?: string | null;
+  /** La categoría es opcional: queda en null si se elimina la categoría. */
+  categoryId?: string | null;
+  category?: Category | null;
+  /** Último coste conocido, surge de la compra al proveedor más reciente. */
+  lastKnownCost?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -67,6 +82,8 @@ export type Customer = {
   phone: string;
   address: string;
   notes?: string | null;
+  /** Baja lógica: el cliente se archiva cuando tiene historial. */
+  deletedAt?: string | null;
   createdAt?: string;
 };
 
@@ -75,10 +92,16 @@ export type OrderItem = {
   productId?: string;
   productName: string;
   saleUnit: SaleUnit;
+  /** Cantidad solicitada por el cliente (unidades o kg pedidos). */
   quantity: string;
   requestedKg?: string | null;
+  estimatedMinKg?: string | null;
+  estimatedMaxKg?: string | null;
+  estimatedLineTotalMax?: string | null;
+  /** Kilos realmente pesados al preparar el pedido. */
   actualKg?: string | null;
   unitPrice: string;
+  unitCost?: string | null;
   estimatedLineTotal: string;
   finalLineTotal?: string | null;
 };
@@ -88,10 +111,8 @@ export type Order = {
   status: OrderStatus;
   paymentStatus?: PaymentStatus;
   estimatedTotal: string;
+  estimatedTotalMax?: string | null;
   finalTotal?: string | null;
-  estimatedDeliveryDate: string;
-  deliveryWindowStart?: string | null;
-  deliveryWindowEnd?: string | null;
   notes?: string | null;
   orderedAt: string;
   customer?: Customer;
@@ -104,8 +125,11 @@ export type SaleItem = {
   productName: string;
   saleUnit: SaleUnit;
   quantity: string;
+  /** Kilos realmente entregados, base del cálculo de ganancia. */
   kg?: string | null;
   unitPrice: string;
+  /** Coste real de adquisición. Nulo si todavía no hubo compra al proveedor. */
+  unitCost?: string | null;
   lineTotal: string;
 };
 
@@ -131,6 +155,16 @@ export type Payment = {
   saleId?: string | null;
 };
 
+export type SupplierProduct = {
+  id: string;
+  productId: string;
+  supplierId: string;
+  purchasePrice?: string | null;
+  minPurchaseQty?: string | null;
+  notes?: string | null;
+  product: Pick<Product, 'id' | 'name' | 'saleUnit' | 'salePrice'>;
+};
+
 export type Supplier = {
   id: string;
   name: string;
@@ -139,6 +173,30 @@ export type Supplier = {
   address?: string | null;
   notes?: string | null;
   isActive: boolean;
+  /** La categoría es opcional: queda en null si se elimina la categoría. */
+  categoryId?: string | null;
+  category?: SupplierCategory | null;
+  products?: SupplierProduct[];
+};
+
+export type PurchaseItem = {
+  id: string;
+  productId: string;
+  quantity: string;
+  unitCost: string;
+  lineTotal: string;
+  product?: Pick<Product, 'id' | 'name' | 'saleUnit'>;
+};
+
+export type Purchase = {
+  id: string;
+  status: string;
+  purchasedAt: string;
+  totalCost: string;
+  notes?: string | null;
+  wholesaleOrderId?: string | null;
+  supplier: Pick<Supplier, 'id' | 'name'>;
+  items: PurchaseItem[];
 };
 
 export type UserAccount = {
@@ -177,31 +235,54 @@ export type DashboardOverview = {
     monthCosts: string;
     monthEstimatedProfit: string;
     monthCogs: string;
+    /** Renglones vendidos sin coste de compra conocido todavía. */
+    monthItemsWithoutCost: number;
+  };
+  stock?: {
+    products: number;
+    estimatedValue: string;
+  };
+  businessWeek?: {
+    weekStart: string;
+    weekEnd: string;
+    label: string;
+    orders: number;
+    pending: number;
+    confirmed: number;
+    customers: number;
   };
 };
 
-export type WeeklyDay = {
-  date: string;
-  orders: Order[];
-  totals: { orders: number; estimatedTotal: string; finalTotal: string; kg: string };
-};
-
-export type WeeklyPlanning = {
-  weekStart: string;
-  weekEnd: string;
-  days: WeeklyDay[];
-  totals: WeeklyDay['totals'];
-};
-
 export type WholesaleOrderStatus = 'BORRADOR' | 'PREPARADO' | 'CONFIRMADO' | 'RECIBIDO';
+
+export type WeeklyProductSupplier = {
+  supplierId: string;
+  supplierName: string;
+  purchasePrice?: string | null;
+  minPurchaseQty?: string | null;
+};
 
 export type WeeklyProductSummary = {
   productId: string;
   productName: string;
   saleUnit: SaleUnit;
+  estimatedMinKg?: string | null;
+  estimatedMaxKg?: string | null;
   confirmedQuantity: string;
   pendingQuantity: string;
   totalQuantity: string;
+  stock: string;
+  planningUnit: SaleUnit;
+  planningDemand: string;
+  estimatedDemandKgMin?: string | null;
+  estimatedDemandKgMax?: string | null;
+  purchaseNeed: string;
+  suggestedQty: string;
+  surplusQty: string;
+  belowMinimum?: boolean;
+  cancelledQuantity?: string;
+  excluded?: boolean;
+  suppliers: WeeklyProductSupplier[];
 };
 
 export type WeeklyOrderRow = {
@@ -212,14 +293,14 @@ export type WeeklyOrderRow = {
   weekday: string;
   estimatedTotal: string;
   finalTotal?: string | null;
-  estimatedDeliveryDate: string;
   customer?: Customer;
   items: Array<{
     id: string;
     productId: string;
     productName: string;
     saleUnit: SaleUnit;
-    quantity: string;
+    requestedQuantity: string;
+    cancelled?: boolean;
   }>;
 };
 
@@ -228,10 +309,22 @@ export type WholesaleOrderItem = {
   productId: string;
   productName: string;
   saleUnit: SaleUnit;
+  supplierId?: string | null;
+  supplier?: { id: string; name: string } | null;
   requestedByCustomers: string;
   pendingByCustomers: string;
   totalRequested: string;
+  stockAvailable?: string;
+  purchaseNeed?: string;
+  minPurchaseQty?: string | null;
   quantityToOrder: string;
+  receivedQty?: string | null;
+  surplusQty?: string;
+  shortageQty?: string;
+  excludedAt?: string | null;
+  /** Precio de coste de esta compra concreta. */
+  unitCost?: string | null;
+  lineTotal?: string | null;
 };
 
 export type WholesaleOrder = {
@@ -240,11 +333,14 @@ export type WholesaleOrder = {
   weekEnd: string;
   status: WholesaleOrderStatus;
   notes?: string | null;
+  totalCost?: string | null;
+  supplier?: { id: string; name: string } | null;
   confirmedAt?: string | null;
   receivedAt?: string | null;
   createdBy?: { id: string; firstName: string; lastName: string; email: string };
   confirmedBy?: { id: string; firstName: string; lastName: string; email: string } | null;
   items: WholesaleOrderItem[];
+  purchases?: Array<{ id: string; supplierId: string; totalCost: string; status: string }>;
 };
 
 export type WeeklyOrders = {
@@ -307,6 +403,7 @@ export const ORDER_FLOW: OrderStatus[] = [
   'CONFIRMADO',
   'EN_PREPARACION',
   'LISTO',
+  'EN_ENTREGA',
   'ENTREGADO',
 ];
 
@@ -353,6 +450,21 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   OTRO: 'Otro',
 };
 
+export type ProductListStatus = 'catalog' | 'active' | 'inactive' | 'archived' | 'all';
+
+export type ProductUsage = {
+  orders: number;
+  sales: number;
+  purchases: number;
+  stockMovements: number;
+};
+
+export const PRODUCT_STATUS_LABEL: Record<Exclude<ProductListStatus, 'all' | 'catalog'>, string> = {
+  active: 'Activo',
+  inactive: 'Inactivo',
+  archived: 'Dado de baja',
+};
+
 export const WHOLESALE_STATUS_LABEL: Record<WholesaleOrderStatus, string> = {
   BORRADOR: 'Borrador',
   PREPARADO: 'Preparado',
@@ -360,9 +472,29 @@ export const WHOLESALE_STATUS_LABEL: Record<WholesaleOrderStatus, string> = {
   RECIBIDO: 'Recibido',
 };
 
-export const DELIVERY_WINDOWS = [
-  { label: 'Mañana', start: '09:00', end: '12:00' },
-  { label: 'Mediodía', start: '12:00', end: '15:00' },
-  { label: 'Tarde', start: '15:00', end: '18:00' },
-  { label: 'Noche', start: '18:00', end: '21:00' },
-] as const;
+export type StockMovementType = 'PURCHASE' | 'SALE' | 'ORDER_FULFILLMENT' | 'ADJUSTMENT' | 'CANCELLATION';
+
+export type StockMovement = {
+  id: string;
+  type: StockMovementType;
+  quantityDelta: string;
+  reason?: string | null;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  createdAt: string;
+  product?: { id: string; name: string; saleUnit: SaleUnit };
+  user?: { firstName: string; lastName: string } | null;
+};
+
+export type StockOverview = {
+  products: number;
+  estimatedValue: string;
+};
+
+export const STOCK_MOVEMENT_LABEL: Record<StockMovementType, string> = {
+  PURCHASE: 'Compra',
+  SALE: 'Venta',
+  ORDER_FULFILLMENT: 'Pedido',
+  ADJUSTMENT: 'Ajuste',
+  CANCELLATION: 'Cancelación',
+};

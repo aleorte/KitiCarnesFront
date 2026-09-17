@@ -6,7 +6,7 @@ export function SettingsPage() {
   const { user } = useAuth();
   return (
     <div>
-      <PageHeader title="Configuración" description="Sesión, permisos y acceso a la tienda pública." />
+      <PageHeader title="Configuración" description="Sesión, permisos y acceso al mostrador de Rinde Más Carnes." />
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-3xl bg-cream p-5">
           <h2 className="font-display text-2xl">Sesión</h2>

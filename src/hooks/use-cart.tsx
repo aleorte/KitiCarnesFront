@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { Product } from '../types/api';
+import { estimatedLineTotals, isVariableWeight, needsWeighing } from '../utils/format';
 
 export type CartItem = {
   productId: string;
@@ -7,6 +8,8 @@ export type CartItem = {
   imageUrl?: string | null;
   saleUnit: Product['saleUnit'];
   salePrice: string;
+  estimatedMinKg?: string | null;
+  estimatedMaxKg?: string | null;
   quantity: number;
 };
 
@@ -16,6 +19,8 @@ type CartContextValue = {
   update: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
   clear: () => void;
+  estimatedTotalMin: number;
+  estimatedTotalMax: number;
   estimatedTotal: number;
   hasWeightItems: boolean;
 };
@@ -42,11 +47,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const value = useMemo<CartContextValue>(() => {
-    const estimatedTotal = items.reduce((sum, item) => sum + Number(item.salePrice) * item.quantity, 0);
+    const totals = items.reduce(
+      (acc, item) => {
+        const range = estimatedLineTotals(item);
+        return { min: acc.min + range.min, max: acc.max + range.max };
+      },
+      { min: 0, max: 0 },
+    );
     return {
       items,
-      estimatedTotal,
-      hasWeightItems: items.some((item) => item.saleUnit === 'KILOGRAM'),
+      estimatedTotalMin: totals.min,
+      estimatedTotalMax: totals.max,
+      estimatedTotal: totals.min,
+      hasWeightItems: items.some((item) => needsWeighing(item)),
       add(product, quantity) {
         persist(
           items.some((item) => item.productId === product.id)
@@ -61,6 +74,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
                   imageUrl: product.imageUrl,
                   saleUnit: product.saleUnit,
                   salePrice: product.salePrice,
+                  estimatedMinKg: product.estimatedMinKg,
+                  estimatedMaxKg: product.estimatedMaxKg,
                   quantity,
                 },
               ],
@@ -90,3 +105,5 @@ export function useCart() {
   if (!ctx) throw new Error('CartProvider missing');
   return ctx;
 }
+
+export { isVariableWeight };

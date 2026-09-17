@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Button, Field, Input } from '../../components/ui';
+import { BRAND_NAME } from '../../brand';
 import { useAuth } from '../../hooks/use-auth';
 
 const schema = z.object({
@@ -28,7 +29,7 @@ export function LoginPage() {
           }
         })}
       >
-        <p className="text-xs uppercase tracking-[0.22em] text-blood">Acceso del equipo</p>
+        <p className="text-xs uppercase tracking-[0.22em] text-blood">{BRAND_NAME}</p>
         <h1 className="mt-2 font-display text-4xl">Entrar al obrador</h1>
         <div className="mt-6 space-y-4">
           <Field label="Email" error={form.formState.errors.email?.message}>

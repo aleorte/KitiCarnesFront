@@ -9,23 +9,28 @@ import {
   Menu,
   Package,
   Settings,
+  ShoppingBag,
   ShoppingCart,
   Truck,
   Users,
   Wallet,
+  Warehouse,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
+import { BRAND_NAME } from '../brand';
 import { useAuth } from '../hooks/use-auth';
 import { cn } from '../utils/format';
 
 const nav = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard:read' },
   { to: '/admin/pedidos', label: 'Pedidos', icon: ShoppingCart, permission: 'orders:read' },
-  { to: '/admin/pedidos-semanales', label: 'Pedidos semanales', icon: ClipboardList, permission: 'weekly-planning:manage' },
+  { to: '/admin/pedidos-semanales', label: 'Pedidos semanales', icon: ClipboardList, permission: 'weekly-orders:manage' },
   { to: '/admin/productos', label: 'Productos', icon: Package, permission: 'products:read' },
+  { to: '/admin/stock', label: 'Stock', icon: Warehouse, permission: 'products:read' },
   { to: '/admin/clientes', label: 'Clientes', icon: Users, permission: 'customers:read' },
   { to: '/admin/proveedores', label: 'Proveedores', icon: Truck, permission: 'suppliers:read' },
+  { to: '/admin/compras', label: 'Compras', icon: ShoppingBag, permission: 'purchases:read' },
   { to: '/admin/ventas', label: 'Ventas', icon: Wallet, permission: 'sales:read' },
   { to: '/admin/pagos', label: 'Pagos', icon: CreditCard, permission: 'payments:read' },
   { to: '/admin/estadisticas', label: 'Estadísticas', icon: BarChart3, permission: 'dashboard:read' },
@@ -53,11 +58,11 @@ export function AdminLayout() {
               <Beef className="h-5 w-5" />
             </span>
             <div>
-              <p className="font-display text-lg leading-none">KitiKitiKiti</p>
+              <p className="font-display text-lg leading-none">{BRAND_NAME}</p>
               <p className="text-[11px] uppercase tracking-[0.18em] text-gold">Gestión</p>
             </div>
           </div>
-          <button className="lg:hidden" onClick={() => setOpen(false)}>
+          <button className="lg:hidden" onClick={() => setOpen(false)} aria-label="Cerrar menú">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -93,7 +98,7 @@ export function AdminLayout() {
       </aside>
       <div className="min-w-0">
         <header className="flex items-center justify-between border-b border-line bg-cream/80 px-4 py-3 backdrop-blur lg:px-8">
-          <button className="rounded-full p-2 hover:bg-paper-2 lg:hidden" onClick={() => setOpen(true)}>
+          <button className="rounded-full p-2 hover:bg-paper-2 lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menú">
             <Menu className="h-5 w-5" />
           </button>
           <p className="text-sm text-ink-soft">

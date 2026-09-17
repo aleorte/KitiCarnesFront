@@ -1,3 +1,5 @@
+import { apiBaseUrl } from '../config/env';
+
 const TOKEN_KEY = 'kitikitikiti.token';
 
 export class ApiError extends Error {
@@ -23,7 +25,7 @@ type RequestOptions = Omit<RequestInit, 'body'> & {
   auth?: boolean;
 };
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? '/api/v1').replace(/\/$/, '');
+const API_BASE = apiBaseUrl();
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, auth = true, headers, ...rest } = options;

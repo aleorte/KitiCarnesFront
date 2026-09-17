@@ -85,6 +85,51 @@ export function dateOnly(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+export function isVariableWeight(item: {
+  estimatedMinKg?: string | number | null;
+  estimatedMaxKg?: string | number | null;
+}) {
+  return item.estimatedMinKg != null && item.estimatedMaxKg != null && item.estimatedMinKg !== '' && item.estimatedMaxKg !== '';
+}
+
+export function needsWeighing(item: {
+  saleUnit: 'UNIT' | 'KILOGRAM';
+  estimatedMinKg?: string | number | null;
+  estimatedMaxKg?: string | number | null;
+}) {
+  return item.saleUnit === 'KILOGRAM' || isVariableWeight(item);
+}
+
+export function formatEstimatedKgRange(minKg: string | number | null | undefined, maxKg: string | number | null | undefined) {
+  if (minKg == null || maxKg == null || minKg === '' || maxKg === '') return null;
+  const min = Number(minKg).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+  const max = Number(maxKg).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+  return `${min} a ${max} kg`;
+}
+
+export function estimatedLineTotals(item: {
+  salePrice: string | number;
+  quantity: number;
+  saleUnit: 'UNIT' | 'KILOGRAM';
+  estimatedMinKg?: string | number | null;
+  estimatedMaxKg?: string | number | null;
+}) {
+  const price = Number(item.salePrice);
+  if (isVariableWeight(item)) {
+    return {
+      min: price * item.quantity * Number(item.estimatedMinKg),
+      max: price * item.quantity * Number(item.estimatedMaxKg),
+    };
+  }
+  const value = price * item.quantity;
+  return { min: value, max: value };
+}
+
+export function formatMoneyRange(min: number, max: number) {
+  if (min === max) return formatMoney(min);
+  return `${formatMoney(min)} – ${formatMoney(max)}`;
+}
+
 export function mondayOf(date: Date) {
   const copy = new Date(date);
   const day = copy.getDay();

@@ -3,7 +3,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recha
 import { dashboardApi } from '../../api/services';
 import { PageHeader, Skeleton } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
-import { formatMoney } from '../../utils/format';
+import { formatMoney, formatQty } from '../../utils/format';
 
 export function StatsPage() {
   const { hasPermission } = useAuth();
@@ -27,8 +27,12 @@ export function StatsPage() {
         </div>
         {hasPermission('dashboard:financial') && overview.data.financial ? (
           <div className="rounded-3xl bg-ink p-5 text-cream">
-            <p className="text-xs uppercase tracking-[0.16em] text-gold">Costos del mes</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-gold">Compras del mes</p>
             <p className="font-display text-4xl">{formatMoney(overview.data.financial.monthCosts)}</p>
+            <p className="mt-2 text-xs text-cream/70">
+              Coste de lo vendido {formatMoney(overview.data.financial.monthCogs)} · ganancia{' '}
+              {formatMoney(overview.data.financial.monthEstimatedProfit)}
+            </p>
           </div>
         ) : (
           <div className="rounded-3xl bg-cream p-5">
@@ -46,17 +50,25 @@ export function StatsPage() {
                 <XAxis dataKey="period" />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="total" fill="#9b1d1d" radius={8} />
+                <Bar dataKey="total" fill="#7A1F2B" radius={8} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
         <div className="rounded-3xl bg-cream p-5">
           <h2 className="font-display text-2xl">Productos más vendidos</h2>
+          <p className="mt-1 text-sm text-ink-soft">Según los kilos realmente entregados.</p>
           <ul className="mt-4 space-y-3">
             {(top.data ?? overview.data.topProducts).map((item) => (
-              <li key={item.productId} className="flex justify-between">
-                <span>{item.productName}</span>
+              <li key={item.productId} className="flex justify-between gap-3">
+                <span>
+                  {item.productName}
+                  {Number(item.kg) > 0 ? (
+                    <span className="block text-sm text-ink-soft/70">
+                      {formatQty(item.kg, 'KILOGRAM')}
+                    </span>
+                  ) : null}
+                </span>
                 <span>{formatMoney(item.total)}</span>
               </li>
             ))}

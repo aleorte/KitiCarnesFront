@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { storeApi } from '../../api/services';
+import { BRAND_TAGLINE } from '../../brand';
+import { BrandLogo } from '../../components/brand-logo';
 import { PriceTag, ProductMedia } from '../../components/commerce';
 import { Button, EmptyState, Input, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
@@ -18,24 +20,25 @@ export function CatalogPage() {
     queryFn: () => storeApi.products({ search: search || undefined, categoryId: categoryId || undefined }),
   });
 
-  const featured = useMemo(() => products.data?.slice(0, 3) ?? [], [products.data]);
-
   return (
     <div>
       <section className="border-b border-line bg-ink text-cream">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 lg:grid-cols-2 lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-gold">Mostrador del barrio</p>
-            <h1 className="mt-4 font-display text-5xl leading-[0.95] sm:text-6xl">
-              Carne por kilo,
-              <br />
-              pedida sin vueltas.
-            </h1>
-            <p className="mt-5 max-w-md text-cream/70">
-              Elegí el corte, indicá los kilos y reservá entrega. El precio final se ajusta al peso real preparado.
-            </p>
+        <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-12 lg:flex-row lg:items-center lg:gap-12 lg:py-14">
+          <div className="flex min-w-0 flex-1 flex-col items-center gap-6 text-center md:flex-row md:items-center md:gap-8 md:text-left lg:gap-10">
+            <BrandLogo className="h-44 shrink-0 sm:h-48 lg:h-56" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-gold">{BRAND_TAGLINE}</p>
+              <h1 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl lg:text-6xl">
+                Carne por kilo,
+                <br />
+                pedida sin vueltas.
+              </h1>
+              <p className="mt-4 max-w-md text-sm text-cream/70 sm:text-base">
+                Elegí el corte y la cantidad. En los productos por peso, el importe final se calcula con el kilo real al preparar el pedido.
+              </p>
+            </div>
           </div>
-          <form className="rounded-3xl bg-cream p-4 text-ink" onSubmit={(e) => e.preventDefault()}>
+          <form className="w-full shrink-0 rounded-3xl bg-cream p-4 text-ink lg:max-w-sm" onSubmit={(e) => e.preventDefault()}>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft/50" />
               <Input
@@ -68,25 +71,7 @@ export function CatalogPage() {
           ))}
         </div>
 
-        {featured.length > 0 && !search && !categoryId ? (
-          <div className="mt-10">
-            <h2 className="font-display text-3xl">Destacados del día</h2>
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              {featured.map((product) => (
-                <Link key={product.id} to={`/producto/${product.id}`} className="group overflow-hidden rounded-3xl bg-cream">
-                  <ProductMedia product={product} className="h-48 w-full transition group-hover:scale-[1.03]" />
-                  <div className="p-5">
-                    <p className="text-xs uppercase tracking-[0.16em] text-blood">{product.category?.name}</p>
-                    <h3 className="mt-1 font-display text-2xl">{product.name}</h3>
-                    <PriceTag product={product} />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <h2 className="mt-12 font-display text-3xl">Cortes disponibles</h2>
+        <h2 className="mt-8 font-display text-3xl">Cortes disponibles</h2>
         {products.isLoading ? (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -105,6 +90,9 @@ export function CatalogPage() {
                     <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/60">{product.category?.name}</p>
                     <h3 className="font-display text-2xl">{product.name}</h3>
                     <PriceTag product={product} />
+                    {product.estimatedMinKg && product.estimatedMaxKg ? (
+                      <p className="mt-2 text-sm font-medium text-warn">Peso estimado: el importe final se calcula con el peso real.</p>
+                    ) : null}
                   </div>
                   <div className="flex gap-2">
                     <Link to={`/producto/${product.id}`} className="flex-1">

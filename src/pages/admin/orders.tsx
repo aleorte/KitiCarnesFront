@@ -10,16 +10,17 @@ import {
   ORDER_FLOW,
   ORDER_STATUS_ACTIONS,
   ORDER_STATUS_LABEL,
+  PAYMENT_METHOD_LABEL,
   type Order,
   type OrderStatus,
   type PaymentMethod,
 } from '../../types/api';
-import { formatDate, formatKgDelta, formatMoney, formatQty } from '../../utils/format';
+import { formatDate, formatKgDelta, formatMoney, formatQty, needsWeighing } from '../../utils/format';
 
 const WEIGHT_PATTERN = /^\d+(\.\d{1,3})?$/;
 
 function missingActualKg(order: Order) {
-  return order.items.filter((item) => item.saleUnit === 'KILOGRAM' && (item.actualKg === null || item.actualKg === undefined || item.actualKg === ''));
+  return order.items.filter((item) => needsWeighing(item) && (item.actualKg === null || item.actualKg === undefined || item.actualKg === ''));
 }
 
 function canWeigh(status: OrderStatus) {
@@ -91,7 +92,8 @@ export function OrdersPage() {
               <thead className="bg-paper text-xs uppercase tracking-wider text-ink-soft">
                 <tr>
                   <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Entrega</th>
+                  <th className="px-4 py-3">Teléfono</th>
+                  <th className="px-4 py-3">Pedido</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3 text-right">Total</th>
                   <th className="px-4 py-3 text-right">Acción</th>
@@ -108,9 +110,8 @@ export function OrdersPage() {
                         </Link>
                         <p className="text-ink-soft">{order.customer?.address}</p>
                       </td>
-                      <td className="px-4 py-3">
-                        {formatDate(order.estimatedDeliveryDate)} {order.deliveryWindowStart}-{order.deliveryWindowEnd}
-                      </td>
+                      <td className="px-4 py-3">{order.customer?.phone}</td>
+                      <td className="px-4 py-3">{formatDate(order.orderedAt)}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} />
                       </td>
@@ -144,8 +145,12 @@ export function OrdersPage() {
                       </p>
                       <StatusBadge status={order.status} />
                     </div>
-                    <p className="mt-1 text-sm text-ink-soft">{order.customer?.address}</p>
-                    <p className="mt-2">{formatMoney(order.estimatedTotal)}</p>
+                    <p className="mt-1 text-sm text-ink-soft">{order.customer?.phone}</p>
+                    <p className="text-sm text-ink-soft">{order.customer?.address}</p>
+                    <p className="mt-2">
+                      {formatMoney(order.finalTotal ?? order.estimatedTotal)} ·{' '}
+                      {formatDate(order.orderedAt)}
+                    </p>
                   </Link>
                   {primary ? (
                     <Button
@@ -210,14 +215,17 @@ export function OrderDetailPage() {
     setWeight(
       Object.fromEntries(
         order.data.items
-          .filter((item) => item.saleUnit === 'KILOGRAM')
+          .filter((item) => needsWeighing(item))
           .map((item) => [item.id, item.actualKg ?? '']),
       ),
     );
+    if (order.data.finalTotal && order.data.paymentStatus !== 'PAGADO') {
+      setPayment((prev) => ({ ...prev, amount: prev.amount || order.data!.finalTotal! }));
+    }
   }, [order.data]);
 
   const kgItems = useMemo(
-    () => order.data?.items.filter((item) => item.saleUnit === 'KILOGRAM') ?? [],
+    () => order.data?.items.filter((item) => needsWeighing(item)) ?? [],
     [order.data],
   );
 
@@ -226,11 +234,7 @@ export function OrderDetailPage() {
   const weighing = canWeigh(data.status);
   const actions = ORDER_STATUS_ACTIONS[data.status];
   const flowIndex =
-    data.status === 'CANCELADO'
-      ? -1
-      : data.status === 'EN_ENTREGA'
-        ? ORDER_FLOW.indexOf('LISTO')
-        : Math.max(0, ORDER_FLOW.indexOf(data.status));
+    data.status === 'CANCELADO' ? -1 : Math.max(0, ORDER_FLOW.indexOf(data.status));
 
   function weightsPayload() {
     const rows = kgItems
@@ -295,27 +299,42 @@ export function OrderDetailPage() {
           ) : null}
           <ul className="mt-4 space-y-5">
             {data.items.map((item) => {
+              const weighable = needsWeighing(item);
               const requested = item.requestedKg ?? item.quantity;
               const actual = item.actualKg;
-              const delta = item.saleUnit === 'KILOGRAM' ? formatKgDelta(requested, actual) : null;
+              const delta = weighable ? formatKgDelta(item.saleUnit === 'KILOGRAM' ? requested : item.estimatedMinKg, actual) : null;
+              const pendingFinal = item.finalLineTotal == null;
               return (
                 <li key={item.id} className="border-b border-line pb-4 last:border-b-0">
                   <div className="flex justify-between gap-3">
                     <span className="font-semibold">{item.productName}</span>
-                    <span>{formatMoney(item.finalLineTotal ?? item.estimatedLineTotal)}</span>
+                    <span>
+                      {pendingFinal
+                        ? item.estimatedLineTotalMax && item.estimatedLineTotalMax !== item.estimatedLineTotal
+                          ? `${formatMoney(item.estimatedLineTotal)} – ${formatMoney(item.estimatedLineTotalMax)}`
+                          : formatMoney(item.estimatedLineTotal)
+                        : formatMoney(item.finalLineTotal)}
+                      <span className="block text-xs text-ink-soft">{pendingFinal ? 'estimado' : 'importe final'}</span>
+                    </span>
                   </div>
-                  {item.saleUnit === 'KILOGRAM' ? (
+                  {weighable ? (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Solicitado</p>
-                        <p className="font-display text-2xl">{formatQty(requested, 'KILOGRAM')}</p>
+                        <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">
+                          {item.saleUnit === 'UNIT' ? 'Solicitado' : 'Kg solicitados'}
+                        </p>
+                        <p className="font-display text-2xl">
+                          {item.saleUnit === 'UNIT'
+                            ? `${formatQty(item.quantity, 'UNIT')}${item.estimatedMinKg ? ` · est. ${item.estimatedMinKg}–${item.estimatedMaxKg} kg` : ''}`
+                            : formatQty(requested, 'KILOGRAM')}
+                        </p>
                       </div>
                       <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Real</p>
+                        <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Peso real</p>
                         {weighing ? (
                           <Input
                             inputMode="decimal"
-                            placeholder="Ej: 5.35"
+                            placeholder="Ej: 3.25"
                             value={weight[item.id] ?? ''}
                             onChange={(e) => setWeight((prev) => ({ ...prev, [item.id]: e.target.value }))}
                             className="mt-1"
@@ -331,8 +350,8 @@ export function OrderDetailPage() {
                     <p className="mt-2 text-sm text-ink-soft">Cantidad: {formatQty(item.quantity, 'UNIT')}</p>
                   )}
                   {delta && actual ? (
-                    <p className={`mt-2 text-sm ${Number(actual) - Number(requested) >= 0 ? 'text-ok' : 'text-blood'}`}>
-                      Diferencia: {delta}
+                    <p className={`mt-2 text-sm ${Number(actual) - Number(item.saleUnit === 'KILOGRAM' ? requested : item.estimatedMinKg) >= 0 ? 'text-ok' : 'text-blood'}`}>
+                      Diferencia vs estimado: {delta}
                     </p>
                   ) : null}
                 </li>
@@ -345,11 +364,18 @@ export function OrderDetailPage() {
             </Button>
           ) : null}
           <div className="mt-4 flex justify-between text-sm">
-            <span>Estimado / final</span>
+            <span>{data.finalTotal ? 'Importe final' : 'Importe estimado'}</span>
             <strong>
-              {formatMoney(data.estimatedTotal)} / {formatMoney(data.finalTotal ?? data.estimatedTotal)}
+              {data.finalTotal
+                ? formatMoney(data.finalTotal)
+                : data.estimatedTotalMax && data.estimatedTotalMax !== data.estimatedTotal
+                  ? `${formatMoney(data.estimatedTotal)} – ${formatMoney(data.estimatedTotalMax)}`
+                  : formatMoney(data.estimatedTotal)}
             </strong>
           </div>
+          {data.finalTotal == null ? (
+            <p className="mt-2 text-sm font-medium text-warn">Registrá el peso real para calcular el importe. Eso no registra el pago.</p>
+          ) : null}
         </div>
         <div className="space-y-4">
           <div className="rounded-3xl bg-cream p-5">
@@ -375,22 +401,35 @@ export function OrderDetailPage() {
           </div>
           <div className="rounded-3xl bg-cream p-5">
             <h2 className="font-display text-2xl">Cobro</h2>
-            <Field label="Importe">
-              <Input value={payment.amount} onChange={(e) => setPayment((p) => ({ ...p, amount: e.target.value }))} />
-            </Field>
-            <Field label="Método">
-              <Select
-                value={payment.method}
-                onChange={(e) => setPayment((p) => ({ ...p, method: e.target.value as PaymentMethod }))}
-              >
-                <option value="EFECTIVO">Efectivo</option>
-                <option value="TRANSFERENCIA">Transferencia</option>
-                <option value="TARJETA">Tarjeta</option>
-                <option value="OTRO">Otro</option>
-              </Select>
-            </Field>
-            <Button className="mt-3 w-full" onClick={() => payMutation.mutate()}>
-              Registrar pago
+            {data.paymentStatus === 'PAGADO' ? (
+              <p className="mt-3 rounded-2xl bg-ok/15 px-3 py-2 font-semibold text-ok">Pagado</p>
+            ) : data.finalTotal == null ? (
+              <p className="mt-3 text-sm font-medium text-warn">
+                El importe final todavía no está definido. Pesá el pedido antes de cobrar.
+              </p>
+            ) : (
+              <>
+                <Field label="Importe">
+                  <Input value={payment.amount} onChange={(e) => setPayment((p) => ({ ...p, amount: e.target.value }))} />
+                </Field>
+                <Field label="Método">
+                  <Select
+                    value={payment.method}
+                    onChange={(e) => setPayment((p) => ({ ...p, method: e.target.value as PaymentMethod }))}
+                  >
+                    {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </>
+            )}
+            <Button
+              className="mt-3 w-full"
+              disabled={data.paymentStatus === 'PAGADO' || data.finalTotal == null || payMutation.isPending}
+              onClick={() => payMutation.mutate()}
+            >
+              {data.paymentStatus === 'PAGADO' ? 'Pagado' : 'Registrar pago'}
             </Button>
           </div>
         </div>

@@ -3,10 +3,10 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { storeApi } from '../../api/services';
-import { PriceTag, ProductMedia } from '../../components/commerce';
+import { PriceTag, ProductMedia, WeightPriceNotice } from '../../components/commerce';
 import { Button, Input, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
-import { formatMoney } from '../../utils/format';
+import { formatMoney, formatMoneyRange, estimatedLineTotals, isVariableWeight } from '../../utils/format';
 
 export function ProductDetailPage() {
   const { id = '' } = useParams();
@@ -19,7 +19,8 @@ export function ProductDetailPage() {
 
   const item = product.data;
   const isKg = item.saleUnit === 'KILOGRAM';
-  const subtotal = Number(item.salePrice) * qty;
+  const variable = isVariableWeight(item);
+  const range = estimatedLineTotals({ ...item, quantity: qty });
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-2">
@@ -30,12 +31,18 @@ export function ProductDetailPage() {
         <h1 className="font-display text-5xl">{item.name}</h1>
         <p className="mt-4 max-w-lg text-ink-soft/80">{item.description ?? 'Corte fresco, pesado al momento de preparar el pedido.'}</p>
         <div className="mt-6">
-          <PriceTag product={item} />
+          <PriceTag product={item} quantity={qty} />
         </div>
+        <WeightPriceNotice product={item} quantity={qty} />
         <div className="mt-8 rounded-3xl bg-cream p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft/70">
             {isKg ? 'Kilos a pedir' : 'Unidades'}
           </p>
+          {variable ? (
+            <p className="mt-1 text-sm text-ink-soft">
+              Pedís unidades. El peso real lo registra la carnicería al preparar el pedido.
+            </p>
+          ) : null}
           {isKg ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {[0.5, 1, 1.25, 2.5].map((preset) => (
@@ -67,11 +74,13 @@ export function ProductDetailPage() {
             />
           )}
           <div className="mt-5 flex items-center justify-between">
-            <span className="text-sm text-ink-soft">Subtotal estimado</span>
-            <span className="font-display text-3xl">{formatMoney(subtotal)}</span>
+            <span className="text-sm text-ink-soft">{variable ? 'Precio estimado' : 'Subtotal estimado'}</span>
+            <span className="font-display text-3xl">{formatMoneyRange(range.min, range.max)}</span>
           </div>
-          {isKg ? (
-            <p className="mt-2 text-sm text-warn">El total final se confirma con el peso real preparado.</p>
+          {variable || isKg ? (
+            <p className="mt-2 text-sm font-medium text-warn">
+              Este importe no es definitivo. El precio final = peso real × {formatMoney(item.salePrice)}/kg.
+            </p>
           ) : null}
           <Button
             className="mt-5 w-full"

@@ -12,9 +12,11 @@ import { LoginPage } from './pages/admin/login';
 import { OrderDetailPage, OrdersPage } from './pages/admin/orders';
 import { PaymentsPage } from './pages/admin/payments';
 import { ProductsPage } from './pages/admin/products';
+import { PurchasesPage } from './pages/admin/purchases';
 import { SalesPage } from './pages/admin/sales';
 import { SettingsPage } from './pages/admin/settings';
 import { StatsPage } from './pages/admin/stats';
+import { StockPage } from './pages/admin/stock';
 import { SuppliersPage } from './pages/admin/suppliers';
 import { UsersPage } from './pages/admin/users';
 import { WeeklyOrdersPage } from './pages/admin/weekly-orders';
@@ -53,9 +55,11 @@ export default function App() {
                   <Route path="pedidos-semanales" element={<WeeklyOrdersPage />} />
                   <Route path="planificacion" element={<Navigate to="/admin/pedidos-semanales" replace />} />
                   <Route path="productos" element={<ProductsPage />} />
+                  <Route path="stock" element={<StockPage />} />
                   <Route path="clientes" element={<CustomersPage />} />
                   <Route path="clientes/:id" element={<CustomerDetailPage />} />
                   <Route path="proveedores" element={<SuppliersPage />} />
+                  <Route path="compras" element={<PurchasesPage />} />
                   <Route path="ventas" element={<SalesPage />} />
                   <Route path="pagos" element={<PaymentsPage />} />
                   <Route path="estadisticas" element={<StatsPage />} />

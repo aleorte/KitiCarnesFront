@@ -51,6 +51,7 @@ export function SuppliersPage() {
     queryFn: () =>
       suppliersApi.list({
         limit: 100,
+        isActive: true,
         categoryId: categoryFilter && categoryFilter !== 'none' ? categoryFilter : undefined,
         uncategorized: categoryFilter === 'none' ? true : undefined,
       }),
@@ -85,10 +86,15 @@ export function SuppliersPage() {
   });
   const remove = useMutation({
     mutationFn: (id: string) => suppliersApi.remove(id),
-    onSuccess: () => {
-      toast.success('Proveedor eliminado o desactivado');
+    onSuccess: (result) => {
+      toast.success(
+        result.strategy === 'deleted'
+          ? 'Proveedor eliminado.'
+          : 'Proveedor dado de baja. El historial de compras se conservó.',
+      );
       void queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       void queryClient.invalidateQueries({ queryKey: ['supplier-categories'] });
+      void queryClient.invalidateQueries({ queryKey: ['weekly-orders'] });
       setPending(null);
     },
     onError: (error: Error) => toast.error(error.message),
@@ -135,7 +141,7 @@ export function SuppliersPage() {
     <div>
       <PageHeader
         title="Proveedores"
-        description="Frigoríficos y mayoristas. Si un proveedor tiene compras, se desactiva para no romper el historial."
+        description="Frigoríficos y mayoristas. Si un proveedor tiene historial, se da de baja y las compras quedan registradas."
         actions={canManage ? <Button onClick={() => openForm()}>Nuevo proveedor</Button> : null}
       />
       <CategoryManager<SupplierCategory>
@@ -337,8 +343,8 @@ export function SuppliersPage() {
       <ConfirmDialog
         open={Boolean(pending)}
         title="Eliminar proveedor"
-        description={`Si “${pending?.name}” tiene compras, se desactiva para conservar el historial. Si no, se elimina.`}
-        confirmLabel="Confirmar"
+        description={`¿Eliminar a “${pending?.name}”? Si tiene compras o pedidos a proveedores, se da de baja para no perder el historial.`}
+        confirmLabel="Eliminar"
         danger
         loading={remove.isPending}
         onClose={() => setPending(null)}

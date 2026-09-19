@@ -23,6 +23,7 @@ import type {
   Supplier,
   SupplierCategory,
   SupplierProduct,
+  SupplierRemoveResult,
   UserAccount,
   WeeklyOrders,
   WeeklyProductSources,
@@ -160,7 +161,7 @@ export const suppliersApi = {
   create: (body: Record<string, unknown>) => api.post<Supplier>('/suppliers', body),
   update: (id: string, body: Record<string, unknown>) =>
     api.patch<Supplier>(`/suppliers/${id}`, body),
-  remove: (id: string) => api.delete<Supplier>(`/suppliers/${id}`),
+  remove: (id: string) => api.delete<SupplierRemoveResult>(`/suppliers/${id}`),
   linkProduct: (
     id: string,
     body: { productId: string; purchasePrice?: string; minPurchaseQty?: string; notes?: string },

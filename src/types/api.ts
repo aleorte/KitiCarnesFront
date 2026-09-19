@@ -202,6 +202,18 @@ export type Supplier = {
   products?: SupplierProduct[];
 };
 
+export type SupplierRemoveResult = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  strategy: 'deleted' | 'archived';
+  usage?: {
+    purchases: number;
+    wholesaleOrders: number;
+    wholesaleItems: number;
+  };
+};
+
 export type PurchaseItem = {
   id: string;
   productId: string;

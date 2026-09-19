@@ -89,7 +89,7 @@ export function CartPage() {
         </div>
         {hasWeightItems ? (
           <p className="mt-3 text-sm font-medium text-gold">
-            Este total es estimado. El importe final se calcula con el peso real al preparar el pedido. No es el precio definitivo.
+            Este total es estimado. El importe final se calcula con el peso real al entregar. No es el precio definitivo.
           </p>
         ) : null}
         {unavailable.length > 0 ? (

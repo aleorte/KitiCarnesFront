@@ -9,6 +9,7 @@ import { BrandLogo } from '../../components/brand-logo';
 import { PriceTag, ProductMedia } from '../../components/commerce';
 import { Button, EmptyState, Input, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
+import { isVariableWeight } from '../../utils/format';
 
 export function CatalogPage() {
   const [search, setSearch] = useState('');
@@ -90,8 +91,8 @@ export function CatalogPage() {
                     <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/60">{product.category?.name}</p>
                     <h3 className="font-display text-2xl">{product.name}</h3>
                     <PriceTag product={product} />
-                    {product.estimatedMinKg && product.estimatedMaxKg ? (
-                      <p className="mt-2 text-sm font-medium text-warn">Peso estimado: el importe final se calcula con el peso real.</p>
+                    {isVariableWeight(product) ? (
+                      <p className="mt-2 text-sm font-medium text-warn">Peso estimado: el importe final se calcula con el peso real al entregar.</p>
                     ) : null}
                   </div>
                   <div className="flex gap-2">

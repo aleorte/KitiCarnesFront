@@ -1,7 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { Search, ShoppingBag } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { storeApi } from '../api/services';
 import { BRAND_NAME } from '../brand';
+import { WhatsAppIcon } from '../components/whatsapp-button';
 import { useCart } from '../hooks/use-cart';
+import { openWhatsApp } from '../utils/whatsapp';
 
 const links = [
   { to: '/', label: 'Mostrador' },
@@ -12,6 +16,12 @@ const links = [
 export function StoreLayout() {
   const { items } = useCart();
   const count = items.length;
+  const contact = useQuery({
+    queryKey: ['store-contact'],
+    queryFn: storeApi.contact,
+    staleTime: 5 * 60 * 1000,
+  });
+  const shopWhatsApp = contact.data?.whatsappPhone;
 
   return (
     <div className="min-h-screen bg-paper text-ink">
@@ -48,6 +58,22 @@ export function StoreLayout() {
       <footer className="mt-16 border-t border-line px-4 py-10 text-center text-sm text-ink-soft/70">
         Cortes por kilo y pedidos del barrio. {BRAND_NAME}.
       </footer>
+      {shopWhatsApp ? (
+        <button
+          type="button"
+          aria-label="Contactar por WhatsApp"
+          title="Contactar por WhatsApp"
+          onClick={() =>
+            openWhatsApp(
+              shopWhatsApp,
+              `Hola, quiero hacer una consulta a ${BRAND_NAME}.`,
+            )
+          }
+          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-ink/20 transition hover:scale-105"
+        >
+          <WhatsAppIcon className="h-8 w-8" />
+        </button>
+      ) : null}
     </div>
   );
 }

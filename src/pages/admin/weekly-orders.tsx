@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCheck, ChevronLeft, ChevronRight, Copy, X } from 'lucide-react';
+import { CheckCheck, ChevronLeft, ChevronRight, Copy, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { suppliersApi, weeklyOrdersApi, type WholesaleItemInput } from '../../api/services';
@@ -33,10 +33,13 @@ function planFor(product: WeeklyProductSummary, supplierId: string) {
   const link = product.suppliers?.find((supplier) => supplier.supplierId === supplierId);
   const demand = Number(product.planningDemand ?? product.totalQuantity);
   const min = link?.minPurchaseQty ? Number(link.minPurchaseQty) : 0;
+  const suggested = min > 0 ? min : demand;
   return {
     demand,
     min: link?.minPurchaseQty ?? null,
-    suggested: demand,
+    suggested,
+    surplus: Math.max(0, suggested - demand),
+    shortage: Math.max(0, demand - suggested),
     belowMinimum: demand > 0 && min > demand,
     purchasePrice: link?.purchasePrice ?? '',
   };
@@ -157,13 +160,13 @@ function ExcludeButton({
   return (
     <button
       type="button"
-      title="Dar de baja"
+      title="Eliminar producto"
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-blood transition hover:bg-blood/10 disabled:opacity-50"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-blood transition hover:bg-blood/10 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <X className="h-4 w-4" />
+      <Trash2 className="h-4 w-4" />
     </button>
   );
 }
@@ -179,7 +182,7 @@ export function WeeklyOrdersPage() {
   const [notes, setNotes] = useState('');
   const [confirmingWeek, setConfirmingWeek] = useState(false);
   const [confirmingWholesale, setConfirmingWholesale] = useState(false);
-  const [generatingPurchases, setGeneratingPurchases] = useState(false);
+  const [pendingCompleteItems, setPendingCompleteItems] = useState<WholesaleItemInput[] | null>(null);
   const [excludingProduct, setExcludingProduct] = useState<WeeklyProductSummary | null>(null);
   const [resettingWeek, setResettingWeek] = useState(false);
 
@@ -198,9 +201,10 @@ export function WeeklyOrdersPage() {
     () =>
       (data?.products ?? []).filter(
         (product) =>
-          Number(product.totalQuantity) > 0 ||
-          Number(product.cancelledQuantity ?? 0) > 0 ||
-          Boolean(product.excluded),
+          !product.catalogDeleted &&
+          (Number(product.totalQuantity) > 0 ||
+            Number(product.cancelledQuantity ?? 0) > 0 ||
+            Boolean(product.excluded)),
       ),
     [data?.products],
   );
@@ -226,7 +230,11 @@ export function WeeklyOrdersPage() {
           const onlySupplier = product.suppliers?.length === 1 ? product.suppliers[0].supplierId : '';
           const nextSupplier = supplierFromItem || onlySupplier;
           const plan = planFor(product, nextSupplier);
-          const ordered = item?.quantityToOrder ?? String(plan.suggested);
+          const savedQty = item?.quantityToOrder;
+          const ordered =
+            savedQty && Number(savedQty) >= plan.suggested
+              ? savedQty
+              : String(plan.suggested);
           return [
             product.productId,
             {
@@ -260,60 +268,27 @@ export function WeeklyOrdersPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const saveWholesale = useMutation({
+  const completeSupplierOrder = useMutation({
     mutationFn: (items: WholesaleItemInput[]) =>
-      wholesale
-        ? weeklyOrdersApi.updateWholesale(wholesale.id, {
-            items,
-            notes,
-            supplierId: supplierId || undefined,
-          })
-        : weeklyOrdersApi.upsertWholesale({
-            weekStart: data?.weekStart,
-            items,
-            notes,
-            supplierId: supplierId || undefined,
-          }),
-    onSuccess: () => {
-      toast.success('Pedido al proveedor guardado');
-      void refresh();
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const confirmWholesale = useMutation({
-    mutationFn: () => weeklyOrdersApi.confirmWholesale(wholesale!.id),
-    onSuccess: () => {
-      toast.success('Pedido a proveedores confirmado. Ahora cargá la cantidad realmente recibida.');
-      void refresh();
-      void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
-      setConfirmingWholesale(false);
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const generatePurchases = useMutation({
-    mutationFn: () =>
-      weeklyOrdersApi.generatePurchases(
-        wholesale!.id,
-        (wholesale?.items ?? [])
-          .filter((item) => !item.excludedAt)
-          .map((item) => ({
-            productId: item.productId,
-            receivedQty: draft[item.productId]?.receivedQty ?? '0',
-          })),
-      ),
+      weeklyOrdersApi.completeSupplierOrder({
+        weekStart: data?.weekStart,
+        items,
+        notes,
+        supplierId: supplierId || undefined,
+      }),
     onSuccess: (created) => {
       toast.success(
         created.length
-          ? `${created.length} compra(s) registradas. Solo el sobrante entra al stock.`
-          : 'Recepción registrada. No hubo sobrante para ingresar a stock.',
+          ? 'Pedido a proveedores confirmado. Solo el sobrante ingresó a stock, con el costo de esta compra.'
+          : 'Pedido a proveedores confirmado. No hubo sobrante para ingresar a stock.',
       );
       void refresh();
       void queryClient.invalidateQueries({ queryKey: ['purchases'] });
       void queryClient.invalidateQueries({ queryKey: ['stock-overview'] });
       void queryClient.invalidateQueries({ queryKey: ['stock-products'] });
-      setGeneratingPurchases(false);
+      void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+      setConfirmingWholesale(false);
+      setPendingCompleteItems(null);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -332,10 +307,12 @@ export function WeeklyOrdersPage() {
     mutationFn: (productId: string) => weeklyOrdersApi.excludeProduct(productId, data?.weekStart),
     onSuccess: (result) => {
       toast.success(
-        `${result.productName} dado de baja. El historial se conservó y ya no suma a la demanda.`,
+        `${result.productName} se eliminó del catálogo. El historial de pedidos se conservó.`,
       );
       void refresh();
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+      void queryClient.invalidateQueries({ queryKey: ['store-products'] });
       setExcludingProduct(null);
     },
     onError: (error: Error) => toast.error(error.message),
@@ -412,7 +389,7 @@ export function WeeklyOrdersPage() {
     }
   }
 
-  function submitWholesale() {
+  function collectWholesaleItems(): WholesaleItemInput[] | null {
     const items: WholesaleItemInput[] = [];
 
     for (const product of products) {
@@ -433,43 +410,43 @@ export function WeeklyOrdersPage() {
 
       if (!quantityToOrder || !QUANTITY_PATTERN.test(quantityToOrder)) {
         toast.error(`Revisá la cantidad a encargar de ${product.productName}`);
-        return;
+        return null;
       }
       if (unitCost && !MONEY_PATTERN.test(unitCost)) {
         toast.error(`Revisá el precio de coste de ${product.productName}`);
-        return;
+        return null;
       }
       if (Number(quantityToOrder) === 0) continue;
       if (plan.demand > 0 && !(row?.supplierId ?? '').trim()) {
         toast.error(`Asigná un proveedor a ${product.productName}`);
-        return;
+        return null;
+      }
+      if (!unitCost) {
+        toast.error(`Cargá el precio de compra de ${product.productName}`);
+        return null;
       }
 
       items.push({
         productId: product.productId,
         quantityToOrder,
-        unitCost: unitCost || undefined,
+        unitCost,
         supplierId: (row?.supplierId ?? '').trim() || undefined,
       });
     }
 
     if (!items.length) {
       toast.error('Cargá al menos un producto con cantidad');
-      return;
+      return null;
     }
 
-    saveWholesale.mutate(items);
+    return items;
   }
 
-  function submitReception() {
-    for (const product of activeProducts) {
-      const received = (draft[product.productId]?.receivedQty ?? '').trim();
-      if (!received || !QUANTITY_PATTERN.test(received)) {
-        toast.error(`Revisá la cantidad recibida de ${product.productName}`);
-        return;
-      }
-    }
-    setGeneratingPurchases(true);
+  function submitComplete() {
+    const items = collectWholesaleItems();
+    if (!items) return;
+    setPendingCompleteItems(items);
+    setConfirmingWholesale(true);
   }
 
   function applySupplier(product: WeeklyProductSummary, nextSupplierId: string) {
@@ -482,6 +459,7 @@ export function WeeklyOrdersPage() {
           ...row,
           supplierId: nextSupplierId,
           unitCost: plan.purchasePrice,
+          quantityToOrder: String(plan.suggested),
         },
       };
     });
@@ -596,7 +574,8 @@ export function WeeklyOrdersPage() {
             <div className="border-b border-line px-5 py-4">
               <h2 className="font-display text-2xl">Demanda semanal y pedido a proveedores</h2>
               <p className="mt-1 text-sm text-ink-soft">
-                Asigná un proveedor a cada corte. El precio y el mínimo se cargan de esa relación.
+                Asigná un proveedor a cada corte. Se compra el mínimo de ese proveedor. El sobrante estimado es
+                mínimo − demanda, nunca negativo.
               </p>
             </div>
             <div className="px-2 pb-2 md:px-3">
@@ -609,11 +588,15 @@ export function WeeklyOrdersPage() {
                     <th className="w-[12%] px-2 py-3 font-medium">Precio</th>
                     <th className="w-[10%] px-2 py-3 font-medium">Mínimo</th>
                     <th className="w-[12%] px-2 py-3 font-medium">A comprar</th>
-                    {awaitingReception || receptionDone ? (
+                    {receptionDone ? (
                       <th className="w-[12%] px-2 py-3 font-medium">Recibido</th>
                     ) : null}
                     <th className="w-[10%] px-2 py-3 font-medium">Sobrante</th>
-                    {canExclude ? <th className="w-10 px-1 py-3 font-medium" /> : null}
+                    {canExclude ? (
+                      <th className="w-10 px-1 py-3 font-medium">
+                        <span className="sr-only">Acciones</span>
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -626,20 +609,12 @@ export function WeeklyOrdersPage() {
                     const demand = product.planningDemand;
                     const min = plan.min ?? (frozenQty ? saved?.minPurchaseQty : null);
                     const buy = wholesaleEditable ? row.quantityToOrder : saved?.quantityToOrder ?? row.quantityToOrder;
-                    const received = awaitingReception
-                      ? row.receivedQty
-                      : saved?.receivedQty ?? row.receivedQty;
+                    const received = saved?.receivedQty ?? row.receivedQty;
                     const excluded = Boolean(product.excluded || saved?.excludedAt);
-                    const reception = receptionFor(demand ?? 0, received || '0');
-                    const plannedSurplus = Math.max(0, Number(buy || 0) - Number(demand || 0));
-                    const surplus = excludedQty(
-                      excluded,
-                      receptionDone || awaitingReception ? reception.surplus : plannedSurplus,
-                    );
-                    const shortage = excludedQty(
-                      excluded,
-                      receptionDone || awaitingReception ? reception.shortage : 0,
-                    );
+                    const planned = receptionFor(demand ?? 0, buy || '0');
+                    const reception = receptionFor(demand ?? 0, received || buy || '0');
+                    const surplus = excludedQty(excluded, receptionDone ? reception.surplus : planned.surplus);
+                    const shortage = excludedQty(excluded, receptionDone ? reception.shortage : planned.shortage);
                     const belowMinimum =
                       !excluded && Number(demand) > 0 && Number(min) > Number(demand);
                     const supplierName =
@@ -697,23 +672,9 @@ export function WeeklyOrdersPage() {
                             formatQty(excluded ? 0 : buy || '0', unit)
                           )}
                         </td>
-                        {awaitingReception || receptionDone ? (
+                        {receptionDone ? (
                           <td className="px-2 py-2.5">
-                            {awaitingReception && !excluded ? (
-                              <Input
-                                className={TABLE_CONTROL}
-                                inputMode="decimal"
-                                value={row.receivedQty}
-                                onChange={(event) =>
-                                  setDraft((prev) => ({
-                                    ...prev,
-                                    [product.productId]: { ...row, receivedQty: event.target.value },
-                                  }))
-                                }
-                              />
-                            ) : (
-                              formatQty(excluded ? 0 : received || '0', unit)
-                            )}
+                            {formatQty(excluded ? 0 : received || '0', unit)}
                           </td>
                         ) : null}
                         <td className="whitespace-nowrap px-2 py-2.5">
@@ -726,7 +687,7 @@ export function WeeklyOrdersPage() {
                           <td className="px-1 py-2.5 text-right">
                             {excluded ? null : (
                               <ExcludeButton
-                                label={`Dar de baja ${product.productName}`}
+                                label={`Eliminar producto ${product.productName}`}
                                 disabled={excludeProduct.isPending}
                                 onClick={() => setExcludingProduct(product)}
                               />
@@ -747,14 +708,13 @@ export function WeeklyOrdersPage() {
                 const unit = product.planningUnit ?? product.saleUnit;
                 const demand = product.planningDemand;
                 const min = plan.min;
-                const received = awaitingReception ? row.receivedQty : saved?.receivedQty ?? row.receivedQty;
-                const reception = receptionFor(demand ?? 0, received || '0');
-                const plannedSurplus = Math.max(0, Number(row.quantityToOrder || 0) - Number(demand || 0));
+                const buy = wholesaleEditable ? row.quantityToOrder : saved?.quantityToOrder ?? row.quantityToOrder;
+                const received = saved?.receivedQty ?? row.receivedQty;
+                const planned = receptionFor(demand ?? 0, buy || '0');
+                const reception = receptionFor(demand ?? 0, received || buy || '0');
                 const excluded = Boolean(product.excluded || saved?.excludedAt);
-                const surplus = excludedQty(
-                  excluded,
-                  awaitingReception || receptionDone ? reception.surplus : plannedSurplus,
-                );
+                const surplus = excludedQty(excluded, receptionDone ? reception.surplus : planned.surplus);
+                const shortage = excludedQty(excluded, receptionDone ? reception.shortage : planned.shortage);
                 return (
                   <li
                     key={product.productId}
@@ -766,7 +726,7 @@ export function WeeklyOrdersPage() {
                         <Badge tone="danger">Cancelado</Badge>
                       ) : canExclude ? (
                         <ExcludeButton
-                          label={`Dar de baja ${product.productName}`}
+                          label={`Eliminar producto ${product.productName}`}
                           disabled={excludeProduct.isPending}
                           onClick={() => setExcludingProduct(product)}
                         />
@@ -787,18 +747,24 @@ export function WeeklyOrdersPage() {
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt className="text-ink-soft">Cantidad a comprar</dt>
-                        <dd>{formatQty(excluded ? 0 : row.quantityToOrder || '0', unit)}</dd>
+                        <dd>{formatQty(excluded ? 0 : buy || '0', unit)}</dd>
                       </div>
-                      {awaitingReception || receptionDone ? (
+                      {receptionDone ? (
                         <div className="flex justify-between gap-3">
                           <dt className="text-ink-soft">Cantidad recibida</dt>
                           <dd>{formatQty(excluded ? 0 : received || '0', unit)}</dd>
                         </div>
                       ) : null}
                       <div className="flex justify-between gap-3">
-                        <dt className="text-ink-soft">Sobrante</dt>
+                        <dt className="text-ink-soft">{receptionDone ? 'Sobrante' : 'Sobrante estimado'}</dt>
                         <dd>{formatQty(surplus, unit)}</dd>
                       </div>
+                      {shortage > 0 ? (
+                        <div className="flex justify-between gap-3 text-warn">
+                          <dt>Faltante</dt>
+                          <dd>Falta {formatQty(shortage, unit)}</dd>
+                        </div>
+                      ) : null}
                     </dl>
                     {canAssignSupplier && !excluded ? (
                       <div className="mt-3 grid gap-3">
@@ -823,22 +789,6 @@ export function WeeklyOrdersPage() {
                             />
                           </Field>
                         ) : null}
-                      </div>
-                    ) : null}
-                    {awaitingReception && !excluded ? (
-                      <div className="mt-3">
-                        <Field label="Cantidad recibida">
-                          <Input
-                            inputMode="decimal"
-                            value={row.receivedQty}
-                            onChange={(event) =>
-                              setDraft((prev) => ({
-                                ...prev,
-                                [product.productId]: { ...row, receivedQty: event.target.value },
-                              }))
-                            }
-                          />
-                        </Field>
                       </div>
                     ) : null}
                   </li>
@@ -914,6 +864,20 @@ export function WeeklyOrdersPage() {
                         </div>
                         <p className="mt-1 text-sm text-ink-soft">
                           Demanda semanal {formatQty(product.planningDemand, unit)}
+                          {row.quantityToOrder
+                            ? ` · a comprar ${formatQty(row.quantityToOrder, unit)}`
+                            : ''}
+                          {Number(row.quantityToOrder || 0) > Number(product.planningDemand || 0)
+                            ? ` · sobrante ${formatQty(
+                                Math.max(0, Number(row.quantityToOrder || 0) - Number(product.planningDemand || 0)),
+                                unit,
+                              )}`
+                            : Number(product.planningDemand || 0) > Number(row.quantityToOrder || 0)
+                              ? ` · faltante ${formatQty(
+                                  Math.max(0, Number(product.planningDemand || 0) - Number(row.quantityToOrder || 0)),
+                                  unit,
+                                )}`
+                              : ''}
                         </p>
                         <div className="mt-2 grid gap-3 sm:grid-cols-2">
                           <Field
@@ -953,12 +917,9 @@ export function WeeklyOrdersPage() {
                   </p>
                 ) : null}
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <Button disabled={saveWholesale.isPending} onClick={submitWholesale}>
-                    {saveWholesale.isPending ? 'Guardando...' : 'Guardar pedido a proveedores'}
-                  </Button>
-                  {wholesale ? (
-                    <Button variant="secondary" onClick={() => setConfirmingWholesale(true)}>
-                      Confirmar pedido a proveedores
+                  {canManagePurchases ? (
+                    <Button disabled={completeSupplierOrder.isPending} onClick={submitComplete}>
+                      {completeSupplierOrder.isPending ? 'Confirmando...' : 'Confirmar pedido a proveedores'}
                     </Button>
                   ) : null}
                 </div>
@@ -967,12 +928,14 @@ export function WeeklyOrdersPage() {
               <>
                 <ul className="mt-4 space-y-4 text-sm">
                   {wholesale?.items.map((item) => {
-                    const row = draft[item.productId] ?? emptyDraft();
                     const live = products.find((product) => product.productId === item.productId);
                     const demand = live?.planningDemand ?? item.purchaseNeed ?? '0';
-                    const received = awaitingReception ? row.receivedQty : item.receivedQty ?? row.receivedQty;
+                    const received = item.receivedQty ?? item.quantityToOrder;
+                    const planned = receptionFor(demand, item.quantityToOrder);
                     const balance = receptionFor(demand, received || '0');
                     const excluded = Boolean(item.excludedAt || live?.excluded);
+                    const surplus = receptionDone ? item.surplusQty ?? balance.surplus : planned.surplus;
+                    const shortage = receptionDone ? item.shortageQty ?? balance.shortage : planned.shortage;
                     return (
                       <li key={item.id} className="rounded-2xl bg-paper p-4">
                         <div className="flex justify-between gap-3">
@@ -1000,45 +963,23 @@ export function WeeklyOrdersPage() {
                             <dt className="text-ink-soft">Cantidad a comprar</dt>
                             <dd>{formatQty(item.quantityToOrder, item.saleUnit)}</dd>
                           </div>
+                          {receptionDone ? (
+                            <div className="flex justify-between gap-3">
+                              <dt className="text-ink-soft">Cantidad recibida</dt>
+                              <dd>{formatQty(received || '0', item.saleUnit)}</dd>
+                            </div>
+                          ) : null}
                           <div className="flex justify-between gap-3">
-                            <dt className="text-ink-soft">Cantidad recibida</dt>
-                            <dd>{formatQty(received || '0', item.saleUnit)}</dd>
+                            <dt className="text-ink-soft">{receptionDone ? 'Sobrante' : 'Sobrante estimado'}</dt>
+                            <dd>{formatQty(surplus, item.saleUnit)}</dd>
                           </div>
-                          <div className="flex justify-between gap-3">
-                            <dt className="text-ink-soft">Sobrante</dt>
-                            <dd>
-                              {formatQty(
-                                receptionDone ? item.surplusQty ?? balance.surplus : balance.surplus,
-                                item.saleUnit,
-                              )}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between gap-3">
-                            <dt className="text-ink-soft">Faltante</dt>
-                            <dd>
-                              {formatQty(
-                                receptionDone ? item.shortageQty ?? balance.shortage : balance.shortage,
-                                item.saleUnit,
-                              )}
-                            </dd>
-                          </div>
+                          {Number(shortage) > 0 ? (
+                            <div className="flex justify-between gap-3 text-warn">
+                              <dt>Faltante</dt>
+                              <dd>{formatQty(shortage, item.saleUnit)}</dd>
+                            </div>
+                          ) : null}
                         </dl>
-                        {awaitingReception && !excluded ? (
-                          <div className="mt-3">
-                            <Field label="Cantidad recibida">
-                              <Input
-                                inputMode="decimal"
-                                value={row.receivedQty}
-                                onChange={(event) =>
-                                  setDraft((prev) => ({
-                                    ...prev,
-                                    [item.productId]: { ...row, receivedQty: event.target.value },
-                                  }))
-                                }
-                              />
-                            </Field>
-                          </div>
-                        ) : null}
                       </li>
                     );
                   })}
@@ -1052,17 +993,15 @@ export function WeeklyOrdersPage() {
                     {wholesale?.totalCost ? formatMoney(wholesale.totalCost) : '—'}
                   </strong>
                 </div>
-                {awaitingReception &&
-                canManagePurchases &&
-                (wholesale?.items.filter((item) => !item.excludedAt).length ?? 0) > 0 ? (
-                  <Button className="mt-4" onClick={submitReception}>
-                    Registrar recepción y sobrante
+                {awaitingReception && canManagePurchases ? (
+                  <Button className="mt-4" disabled={completeSupplierOrder.isPending} onClick={submitComplete}>
+                    {completeSupplierOrder.isPending ? 'Confirmando...' : 'Confirmar pedido a proveedores'}
                   </Button>
                 ) : null}
                 {receptionDone ? (
                   <p className="mt-3 text-sm text-ok">
-                    Recepción registrada. Solo el sobrante (recibido − demanda) ingresó a stock, con el costo de esta
-                    compra.
+                    Pedido confirmado. Solo el sobrante (compra − demanda) ingresó a stock, con el costo histórico de
+                    esta compra.
                   </p>
                 ) : null}
               </>
@@ -1091,32 +1030,27 @@ export function WeeklyOrdersPage() {
       <ConfirmDialog
         open={confirmingWholesale}
         title="¿Confirmar el pedido a proveedores?"
-        description="Se confirma el pedido que se realizará a los proveedores. Quedan congelados demanda, cantidades solicitadas, proveedor y precio de coste. Después se carga la cantidad realmente recibida."
+        description="Se confirma la compra al proveedor. La cantidad a comprar cubre la demanda semanal y solo el sobrante (mínimo − demanda, mínimo 0 kg) entra a stock, con el precio histórico de esta compra. No se vuelve a sumar si ya se procesó."
         confirmLabel="Confirmar pedido a proveedores"
-        loading={confirmWholesale.isPending}
-        onClose={() => setConfirmingWholesale(false)}
-        onConfirm={() => confirmWholesale.mutate()}
-      />
-
-      <ConfirmDialog
-        open={generatingPurchases}
-        title="¿Registrar la recepción de esta semana?"
-        description="La cantidad recibida cubre la demanda semanal. Solo el sobrante (recibido − demanda) entra a stock, con el precio de esta compra. Si ya se procesó, no se vuelve a sumar."
-        confirmLabel="Registrar recepción"
-        loading={generatePurchases.isPending}
-        onClose={() => setGeneratingPurchases(false)}
-        onConfirm={() => generatePurchases.mutate()}
+        loading={completeSupplierOrder.isPending}
+        onClose={() => {
+          setConfirmingWholesale(false);
+          setPendingCompleteItems(null);
+        }}
+        onConfirm={() => {
+          if (pendingCompleteItems) completeSupplierOrder.mutate(pendingCompleteItems);
+        }}
       />
 
       <ConfirmDialog
         open={Boolean(excludingProduct)}
-        title="¿Dar de baja este producto de la demanda semanal?"
+        title="¿Eliminar producto?"
         description={
           excludingProduct
-            ? `${excludingProduct.productName} va a dejar de sumar a la demanda. El registro y los pedidos se conservan, marcados como dados de baja.`
-            : 'El producto dejará de sumar a la demanda. El historial se conserva.'
+            ? `Estás por eliminar definitivamente "${excludingProduct.productName}". Esta acción eliminará el producto del catálogo y no podrá deshacerse. Los pedidos, ventas y compras históricas se conservan.`
+            : 'Esta acción eliminará el producto del catálogo y no podrá deshacerse.'
         }
-        confirmLabel="Dar de baja"
+        confirmLabel="Eliminar"
         danger
         loading={excludeProduct.isPending}
         onClose={() => setExcludingProduct(null)}

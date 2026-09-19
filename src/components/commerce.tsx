@@ -69,13 +69,13 @@ export function WeightPriceNotice({
             Precio por kg: {formatMoney(product.salePrice)}. Precio estimado:{' '}
             {formatMoneyRange(totals.min, totals.max)}.
           </p>
+          <p className="mt-2 text-sm font-medium">
+            Pedís unidades. El importe final se calcula con el peso real al entregar.
+          </p>
         </>
       ) : (
         <p className="text-base font-semibold">Precio por kg: {formatMoney(product.salePrice)}</p>
       )}
-      <p className="mt-2 text-sm font-medium">
-        El peso puede variar. El precio final se calculará según el peso real del producto entregado.
-      </p>
     </div>
   );
 }
@@ -90,7 +90,7 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
       ? 'ok'
       : status === 'CANCELADO'
         ? 'danger'
-        : status === 'PENDIENTE'
+        : status === 'PENDIENTE' || status === 'PENDIENTE_WHATSAPP'
           ? 'warn'
           : status === 'EN_ENTREGA'
             ? 'forest'

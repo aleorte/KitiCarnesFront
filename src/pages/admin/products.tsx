@@ -48,7 +48,7 @@ const STATUS_FILTERS: Array<{ id: ProductListStatus; label: string }> = [
   { id: 'catalog', label: 'Catálogo' },
   { id: 'active', label: 'Activos' },
   { id: 'inactive', label: 'Inactivos' },
-  { id: 'archived', label: 'Dados de baja' },
+  { id: 'archived', label: 'Fuera de catálogo' },
 ];
 
 function catalogStatus(product: Product): Exclude<ProductListStatus, 'all' | 'catalog'> {
@@ -63,6 +63,7 @@ function usageLines(usage: ProductUsage) {
     `${usage.sales} ventas`,
     `${usage.purchases} compras`,
     `${usage.stockMovements} movimientos de stock`,
+    `${usage.wholesaleItems ?? 0} renglones al proveedor`,
   ];
 }
 
@@ -147,8 +148,12 @@ export function ProductsPage() {
   });
   const archive = useMutation({
     mutationFn: (id: string) => productsApi.archive(id),
-    onSuccess: () => {
-      toast.success('Producto dado de baja. El historial se conservó.');
+    onSuccess: (result) => {
+      toast.success(
+        result.strategy === 'deleted'
+          ? 'Producto eliminado del catálogo.'
+          : 'Producto sacado del catálogo. El historial se conservó.',
+      );
       refreshProducts();
       setPendingArchive(null);
     },
@@ -184,7 +189,7 @@ export function ProductsPage() {
     <div>
       <PageHeader
         title="Productos"
-        description="El producto define su precio de venta. Desactivar lo oculta al cliente; dar de baja lo saca del catálogo conservando el historial."
+        description="El producto define su precio de venta. Desactivar lo oculta al cliente; eliminar lo saca del catálogo y conserva pedidos, ventas y compras."
         actions={
           hasPermission('products:manage') ? (
             <Button onClick={() => openForm()}>Nuevo corte</Button>
@@ -307,7 +312,7 @@ export function ProductsPage() {
                         </Button>
                       )}
                       <Button variant="danger" onClick={() => void startArchive(product)}>
-                        Dar de baja
+                        Eliminar
                       </Button>
                     </div>
                   ) : null}
@@ -384,9 +389,9 @@ export function ProductsPage() {
       />
       <ConfirmDialog
         open={Boolean(pendingArchive)}
-        title="Dar de baja el producto"
-        description={`¿Estás seguro de que deseas dar de baja este producto? ${pendingArchive?.product.name} dejará de formar parte del catálogo y no se podrá reactivar. El historial se conserva.`}
-        confirmLabel="Dar de baja"
+        title="¿Eliminar producto?"
+        description={`Estás por eliminar definitivamente "${pendingArchive?.product.name}". Esta acción eliminará el producto del catálogo y no podrá deshacerse. Si tiene pedidos, ventas o compras, el historial se conserva.`}
+        confirmLabel="Eliminar"
         danger
         loading={archive.isPending}
         onClose={() => setPendingArchive(null)}

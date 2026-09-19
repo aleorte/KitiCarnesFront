@@ -1,34 +1,113 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ApiError } from '../../api/client';
 import { ordersApi, paymentsApi } from '../../api/services';
 import { StatusBadge } from '../../components/commerce';
-import { Button, Field, Input, PageHeader, Select, Skeleton } from '../../components/ui';
+import {
+  Button,
+  ConfirmDialog,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+  Skeleton,
+  Textarea,
+} from '../../components/ui';
+import { WhatsAppButton } from '../../components/whatsapp-button';
 import {
   ORDER_FLOW,
   ORDER_STATUS_ACTIONS,
+  ORDER_STATUS_FILTER,
   ORDER_STATUS_LABEL,
   PAYMENT_METHOD_LABEL,
+  isOrderDeletable,
+  isOrderEditable,
+  orderFlowIndex,
   type Order,
   type OrderStatus,
   type PaymentMethod,
 } from '../../types/api';
-import { formatDate, formatKgDelta, formatMoney, formatQty, needsWeighing } from '../../utils/format';
+import { formatDate, formatKgDelta, formatMoney, formatQty, needsWeighing, shortOrderId } from '../../utils/format';
+import {
+  buildConfirmedOrderWhatsAppMessage,
+  canMessageOrderOnWhatsApp,
+} from '../../utils/order-whatsapp';
 
 const WEIGHT_PATTERN = /^\d+(\.\d{1,3})?$/;
+const QUANTITY_PATTERN = /^\d+(\.\d{1,3})?$/;
 
 function missingActualKg(order: Order) {
-  return order.items.filter((item) => needsWeighing(item) && (item.actualKg === null || item.actualKg === undefined || item.actualKg === ''));
+  return order.items.filter(
+    (item) =>
+      !item.cancelledAt &&
+      needsWeighing(item) &&
+      (item.actualKg === null || item.actualKg === undefined || item.actualKg === ''),
+  );
 }
 
 function canWeigh(status: OrderStatus) {
   return status === 'EN_PREPARACION' || status === 'LISTO' || status === 'EN_ENTREGA';
 }
 
-function requiresWeight(status: OrderStatus) {
-  return status === 'LISTO' || status === 'ENTREGADO';
+function customerName(order: Order) {
+  return `${order.customer?.firstName ?? ''} ${order.customer?.lastName ?? ''}`.trim() || 'cliente';
+}
+
+type OrderActionsProps = {
+  order: Order;
+  onEdit: (order: Order) => void;
+  onDelete: (order: Order) => void;
+};
+
+function OrderActions({ order, onEdit, onDelete }: OrderActionsProps) {
+  const editable = isOrderEditable(order.status);
+  const deletable = isOrderDeletable(order);
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <Link
+        to={`/admin/pedidos/${order.id}`}
+        title="Ver pedido"
+        aria-label="Ver pedido"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink transition hover:bg-paper-2"
+      >
+        <Eye className="h-4 w-4" />
+      </Link>
+      <button
+        type="button"
+        title={editable ? 'Editar pedido' : 'Este pedido ya no admite modificaciones'}
+        aria-label="Editar pedido"
+        disabled={!editable}
+        onClick={() => onEdit(order)}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink transition hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Pencil className="h-4 w-4" />
+      </button>
+      {canMessageOrderOnWhatsApp(order.status) ? (
+        <WhatsAppButton
+          iconOnly
+          phone={order.customer?.phone}
+          message={buildConfirmedOrderWhatsAppMessage(order)}
+        />
+      ) : (
+        <span className="inline-flex h-9 w-9" aria-hidden="true" />
+      )}
+      <button
+        type="button"
+        title={deletable ? 'Eliminar pedido' : 'Este pedido no se puede eliminar porque ya tiene historial'}
+        aria-label="Eliminar pedido"
+        disabled={!deletable}
+        onClick={() => onDelete(order)}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-blood transition hover:bg-blood/10 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
 }
 
 export function OrdersPage() {
@@ -36,6 +115,8 @@ export function OrdersPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [editing, setEditing] = useState<Order | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Order | null>(null);
   const orders = useQuery({
     queryKey: ['orders', status],
     queryFn: () => ordersApi.list({ status: status || undefined, limit: 50 }),
@@ -55,14 +136,24 @@ export function OrdersPage() {
     },
   });
 
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => ordersApi.remove(id),
+    onSuccess: () => {
+      toast.success('Pedido eliminado');
+      setPendingDelete(null);
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const filtered = orders.data?.data.filter((order) => {
     const haystack = `${order.customer?.firstName} ${order.customer?.lastName} ${order.customer?.phone}`.toLowerCase();
     return haystack.includes(search.toLowerCase());
   });
 
   function runStatus(order: Order, next: OrderStatus) {
-    if (requiresWeight(next) && missingActualKg(order).length > 0) {
-      toast.error('Registrá el peso real de cada corte antes de continuar');
+    if (next === 'ENTREGADO' && missingActualKg(order).length > 0) {
+      toast.error('Registrá el peso real de cada corte de peso variable antes de entregar');
       navigate(`/admin/pedidos/${order.id}`);
       return;
     }
@@ -71,14 +162,14 @@ export function OrdersPage() {
 
   return (
     <div>
-      <PageHeader title="Pedidos" description="Confirmá, prepará, pesá y entregá. El cliente pide un aproximado; el kilo real se carga al preparar." />
+      <PageHeader title="Pedidos" description="Confirmá, prepará y entregá. El peso real se pide solo en cortes de peso variable." />
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <Input placeholder="Cliente o teléfono" value={search} onChange={(e) => setSearch(e.target.value)} />
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Todos los estados</option>
-          {Object.entries(ORDER_STATUS_LABEL).map(([value, label]) => (
+          {ORDER_STATUS_FILTER.map((value) => (
             <option key={value} value={value}>
-              {label}
+              {ORDER_STATUS_LABEL[value]}
             </option>
           ))}
         </Select>
@@ -96,7 +187,7 @@ export function OrdersPage() {
                   <th className="px-4 py-3">Pedido</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-right">Acción</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -106,7 +197,7 @@ export function OrdersPage() {
                     <tr key={order.id} className="border-t border-line">
                       <td className="px-4 py-3">
                         <Link to={`/admin/pedidos/${order.id}`} className="font-semibold hover:text-blood">
-                          {order.customer?.firstName} {order.customer?.lastName}
+                          {customerName(order)}
                         </Link>
                         <p className="text-ink-soft">{order.customer?.address}</p>
                       </td>
@@ -114,18 +205,20 @@ export function OrdersPage() {
                       <td className="px-4 py-3">{formatDate(order.orderedAt)}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} />
-                      </td>
-                      <td className="px-4 py-3 text-right">{formatMoney(order.finalTotal ?? order.estimatedTotal)}</td>
-                      <td className="px-4 py-3 text-right">
                         {primary ? (
-                          <Button
-                            variant="secondary"
+                          <button
+                            type="button"
+                            className="mt-1 block text-xs font-semibold text-blood hover:underline disabled:opacity-50"
                             disabled={statusMutation.isPending}
                             onClick={() => runStatus(order, primary.to)}
                           >
                             {primary.label}
-                          </Button>
+                          </button>
                         ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-right">{formatMoney(order.finalTotal ?? order.estimatedTotal)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <OrderActions order={order} onEdit={setEditing} onDelete={setPendingDelete} />
                       </td>
                     </tr>
                   );
@@ -138,20 +231,17 @@ export function OrdersPage() {
               const primary = ORDER_STATUS_ACTIONS[order.status].find((action) => action.variant === 'primary');
               return (
                 <article key={order.id} className="rounded-3xl bg-cream p-4">
-                  <Link to={`/admin/pedidos/${order.id}`} className="block">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold">
-                        {order.customer?.firstName} {order.customer?.lastName}
+                  <div className="flex items-start justify-between gap-3">
+                    <Link to={`/admin/pedidos/${order.id}`} className="min-w-0">
+                      <p className="font-semibold">{customerName(order)}</p>
+                      <p className="mt-1 text-sm text-ink-soft">{order.customer?.phone}</p>
+                      <p className="text-sm text-ink-soft">{order.customer?.address}</p>
+                      <p className="mt-2">
+                        {formatMoney(order.finalTotal ?? order.estimatedTotal)} · {formatDate(order.orderedAt)}
                       </p>
-                      <StatusBadge status={order.status} />
-                    </div>
-                    <p className="mt-1 text-sm text-ink-soft">{order.customer?.phone}</p>
-                    <p className="text-sm text-ink-soft">{order.customer?.address}</p>
-                    <p className="mt-2">
-                      {formatMoney(order.finalTotal ?? order.estimatedTotal)} ·{' '}
-                      {formatDate(order.orderedAt)}
-                    </p>
-                  </Link>
+                    </Link>
+                    <StatusBadge status={order.status} />
+                  </div>
                   {primary ? (
                     <Button
                       className="mt-3 w-full"
@@ -161,22 +251,150 @@ export function OrdersPage() {
                       {primary.label}
                     </Button>
                   ) : null}
+                  <div className="mt-3 flex justify-end">
+                    <OrderActions order={order} onEdit={setEditing} onDelete={setPendingDelete} />
+                  </div>
                 </article>
               );
             })}
           </div>
         </>
       )}
+
+      <OrderEditDialog
+        order={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['orders'] })}
+      />
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="¿Eliminar pedido?"
+        description={
+          pendingDelete
+            ? `Estás por eliminar el pedido #${shortOrderId(pendingDelete.id)} de ${customerName(pendingDelete)}. Esta acción no se puede deshacer.`
+            : 'Esta acción no se puede deshacer.'
+        }
+        confirmLabel="Eliminar pedido"
+        danger
+        loading={removeMutation.isPending}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) removeMutation.mutate(pendingDelete.id);
+        }}
+      />
     </div>
+  );
+}
+
+function OrderEditDialog({
+  order,
+  onClose,
+  onSaved,
+}: {
+  order: Order | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [notes, setNotes] = useState('');
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const hasActualKg = Boolean(order?.items.some((item) => item.actualKg != null && item.actualKg !== ''));
+
+  useEffect(() => {
+    if (!order) return;
+    setNotes(order.notes ?? '');
+    setQuantities(
+      Object.fromEntries(order.items.filter((item) => !item.cancelledAt).map((item) => [item.id, item.quantity])),
+    );
+  }, [order]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      if (!order) throw new Error('Pedido inválido');
+      const items = hasActualKg
+        ? undefined
+        : order.items
+            .filter((item) => !item.cancelledAt && item.productId)
+            .map((item) => {
+              const quantity = (quantities[item.id] ?? '').trim();
+              if (!quantity || !QUANTITY_PATTERN.test(quantity) || Number(quantity) <= 0) {
+                throw new Error(`Revisá la cantidad de ${item.productName}`);
+              }
+              return {
+                productId: item.productId,
+                quantity,
+                requestedKg: item.saleUnit === 'KILOGRAM' ? quantity : undefined,
+              };
+            });
+      return ordersApi.update(order.id, {
+        notes,
+        ...(items && items.length ? { items } : {}),
+      });
+    },
+    onSuccess: () => {
+      toast.success('Pedido actualizado');
+      onSaved();
+      onClose();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <Modal
+      open={Boolean(order)}
+      title={order ? `Editar pedido #${shortOrderId(order.id)}` : 'Editar pedido'}
+      description={
+        hasActualKg
+          ? 'Este pedido ya tiene pesos reales. Solo se pueden editar las notas.'
+          : 'Podés actualizar las notas y las cantidades solicitadas. El precio de venta histórico no cambia.'
+      }
+      onClose={onClose}
+    >
+      {order ? (
+        <div className="space-y-4">
+          {!hasActualKg
+            ? order.items
+                .filter((item) => !item.cancelledAt)
+                .map((item) => (
+                  <Field
+                    key={item.id}
+                    label={`${item.productName} (${item.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'})`}
+                  >
+                    <Input
+                      inputMode="decimal"
+                      value={quantities[item.id] ?? ''}
+                      onChange={(event) =>
+                        setQuantities((prev) => ({ ...prev, [item.id]: event.target.value }))
+                      }
+                    />
+                  </Field>
+                ))
+            : null}
+          <Field label="Notas">
+            <Textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
+              {save.isPending ? 'Guardando...' : 'Guardar cambios'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 
 export function OrderDetailPage() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const order = useQuery({ queryKey: ['order', id], queryFn: () => ordersApi.one(id) });
   const [weight, setWeight] = useState<Record<string, string>>({});
   const [payment, setPayment] = useState({ amount: '', method: 'EFECTIVO' as PaymentMethod });
+  const [editing, setEditing] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['order', id] });
@@ -210,6 +428,16 @@ export function OrderDetailPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const removeMutation = useMutation({
+    mutationFn: () => ordersApi.remove(id),
+    onSuccess: () => {
+      toast.success('Pedido eliminado');
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      navigate('/admin/pedidos');
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   useEffect(() => {
     if (!order.data) return;
     setWeight(
@@ -225,7 +453,7 @@ export function OrderDetailPage() {
   }, [order.data]);
 
   const kgItems = useMemo(
-    () => order.data?.items.filter((item) => needsWeighing(item)) ?? [],
+    () => order.data?.items.filter((item) => !item.cancelledAt && needsWeighing(item)) ?? [],
     [order.data],
   );
 
@@ -233,8 +461,7 @@ export function OrderDetailPage() {
   const data = order.data;
   const weighing = canWeigh(data.status);
   const actions = ORDER_STATUS_ACTIONS[data.status];
-  const flowIndex =
-    data.status === 'CANCELADO' ? -1 : Math.max(0, ORDER_FLOW.indexOf(data.status));
+  const flowIndex = orderFlowIndex(data.status);
 
   function weightsPayload() {
     const rows = kgItems
@@ -248,14 +475,15 @@ export function OrderDetailPage() {
   }
 
   async function saveWeights() {
+    if (!kgItems.length) return true;
     const rows = weightsPayload();
     if (!rows) return false;
     if (!rows.length) {
-      toast.error('Ingresá el peso real de cada corte');
+      toast.error('Ingresá el peso real de cada corte de peso variable');
       return false;
     }
     if (rows.length !== kgItems.length) {
-      toast.error('Falta el peso real de uno o más cortes');
+      toast.error('Falta el peso real de uno o más cortes de peso variable');
       return false;
     }
     await weightMutation.mutateAsync(rows);
@@ -263,7 +491,7 @@ export function OrderDetailPage() {
   }
 
   async function runAction(next: OrderStatus) {
-    if (requiresWeight(next) && kgItems.length) {
+    if (next === 'ENTREGADO' && kgItems.length) {
       const saved = await saveWeights();
       if (!saved) return;
     }
@@ -275,7 +503,16 @@ export function OrderDetailPage() {
       <PageHeader
         title={`${data.customer?.firstName} ${data.customer?.lastName}`}
         description={`${data.customer?.address} · ${data.customer?.phone}`}
-        actions={<StatusBadge status={data.status} />}
+        actions={
+          <div className="flex items-center gap-1">
+            <StatusBadge status={data.status} />
+            <OrderActions
+              order={data}
+              onEdit={() => setEditing(true)}
+              onDelete={() => setPendingDelete(true)}
+            />
+          </div>
+        }
       />
 
       <ol className="flex gap-2 overflow-x-auto pb-1">
@@ -295,14 +532,18 @@ export function OrderDetailPage() {
         <div className="rounded-3xl bg-cream p-5 lg:col-span-2">
           <h2 className="font-display text-2xl">Productos</h2>
           {weighing && kgItems.length ? (
-            <p className="mt-1 text-sm text-ink-soft">Cargá el peso real de cada corte. Lo solicitado es el aproximado del cliente.</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              Cargá el peso real solo de los cortes de peso variable. Lo solicitado es el aproximado del cliente.
+            </p>
           ) : null}
           <ul className="mt-4 space-y-5">
             {data.items.map((item) => {
               const weighable = needsWeighing(item);
               const requested = item.requestedKg ?? item.quantity;
               const actual = item.actualKg;
-              const delta = weighable ? formatKgDelta(item.saleUnit === 'KILOGRAM' ? requested : item.estimatedMinKg, actual) : null;
+              const delta = weighable
+                ? formatKgDelta(item.saleUnit === 'KILOGRAM' ? requested : item.estimatedMinKg, actual)
+                : null;
               const pendingFinal = item.finalLineTotal == null;
               return (
                 <li key={item.id} className="border-b border-line pb-4 last:border-b-0">
@@ -347,10 +588,19 @@ export function OrderDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="mt-2 text-sm text-ink-soft">Cantidad: {formatQty(item.quantity, 'UNIT')}</p>
+                    <p className="mt-2 text-sm text-ink-soft">
+                      Cantidad: {formatQty(item.quantity, item.saleUnit)}
+                      {item.saleUnit === 'KILOGRAM' ? ' · precio por kg fijo' : ''}
+                    </p>
                   )}
                   {delta && actual ? (
-                    <p className={`mt-2 text-sm ${Number(actual) - Number(item.saleUnit === 'KILOGRAM' ? requested : item.estimatedMinKg) >= 0 ? 'text-ok' : 'text-blood'}`}>
+                    <p
+                      className={`mt-2 text-sm ${
+                        Number(actual) - Number(item.saleUnit === 'KILOGRAM' ? requested : item.estimatedMinKg) >= 0
+                          ? 'text-ok'
+                          : 'text-blood'
+                      }`}
+                    >
                       Diferencia vs estimado: {delta}
                     </p>
                   ) : null}
@@ -373,8 +623,10 @@ export function OrderDetailPage() {
                   : formatMoney(data.estimatedTotal)}
             </strong>
           </div>
-          {data.finalTotal == null ? (
-            <p className="mt-2 text-sm font-medium text-warn">Registrá el peso real para calcular el importe. Eso no registra el pago.</p>
+          {data.finalTotal == null && kgItems.length ? (
+            <p className="mt-2 text-sm font-medium text-warn">
+              Registrá el peso real de los cortes variables para calcular el importe. Eso no registra el pago.
+            </p>
           ) : null}
         </div>
         <div className="space-y-4">
@@ -382,7 +634,9 @@ export function OrderDetailPage() {
             <h2 className="font-display text-2xl">Estado</h2>
             <p className="mt-1 text-sm text-ink-soft">
               {data.status === 'EN_PREPARACION'
-                ? 'Pesá la carne y después entregá el pedido.'
+                ? kgItems.length
+                  ? 'Pesá los cortes de peso variable y después entregá el pedido.'
+                  : 'Este pedido no tiene cortes de peso variable. Podés entregarlo.'
                 : 'El siguiente paso del flujo, sin pantallas extra.'}
             </p>
             <div className="mt-4 flex flex-col gap-2">
@@ -396,16 +650,22 @@ export function OrderDetailPage() {
                   {action.label}
                 </Button>
               ))}
-              {actions.length === 0 ? <p className="text-sm text-ink-soft">Este pedido ya no cambia de estado.</p> : null}
+              {actions.length === 0 ? (
+                <p className="text-sm text-ink-soft">Este pedido ya no cambia de estado.</p>
+              ) : null}
             </div>
           </div>
           <div className="rounded-3xl bg-cream p-5">
             <h2 className="font-display text-2xl">Cobro</h2>
             {data.paymentStatus === 'PAGADO' ? (
               <p className="mt-3 rounded-2xl bg-ok/15 px-3 py-2 font-semibold text-ok">Pagado</p>
-            ) : data.finalTotal == null ? (
+            ) : data.finalTotal == null && kgItems.length ? (
               <p className="mt-3 text-sm font-medium text-warn">
-                El importe final todavía no está definido. Pesá el pedido antes de cobrar.
+                El importe final todavía no está definido. Pesá los cortes variables antes de cobrar.
+              </p>
+            ) : data.finalTotal == null ? (
+              <p className="mt-3 text-sm text-ink-soft">
+                El importe se confirma al entregar. Este pedido no tiene cortes de peso variable.
               </p>
             ) : (
               <>
@@ -434,6 +694,22 @@ export function OrderDetailPage() {
           </div>
         </div>
       </div>
+
+      <OrderEditDialog
+        order={editing ? data : null}
+        onClose={() => setEditing(false)}
+        onSaved={refresh}
+      />
+      <ConfirmDialog
+        open={pendingDelete}
+        title="¿Eliminar pedido?"
+        description={`Estás por eliminar el pedido #${shortOrderId(data.id)} de ${customerName(data)}. Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar pedido"
+        danger
+        loading={removeMutation.isPending}
+        onClose={() => setPendingDelete(false)}
+        onConfirm={() => removeMutation.mutate()}
+      />
     </div>
   );
 }

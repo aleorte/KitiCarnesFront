@@ -7,6 +7,8 @@ import type {
   DashboardOverview,
   Order,
   OrderStatus,
+  OrganizationSettings,
+  ProductUsage,
   Paginated,
   Payment,
   PaymentMethod,
@@ -17,6 +19,7 @@ import type {
   SaleUnit,
   StockMovement,
   StockOverview,
+  StoreCheckoutResponse,
   Supplier,
   SupplierCategory,
   SupplierProduct,
@@ -38,9 +41,10 @@ export const storeApi = {
     api.get<Product[]>(`/store/products${toQuery(params)}`, { auth: false }),
   product: (id: string) => api.get<Product>(`/store/products/${id}`, { auth: false }),
   checkout: (body: Record<string, unknown>) =>
-    api.post<Order>('/store/checkout', body, { auth: false }),
+    api.post<StoreCheckoutResponse>('/store/checkout', body, { auth: false }),
   track: (id: string, phone: string) =>
     api.get<Order>(`/store/orders/${id}${toQuery({ phone })}`, { auth: false }),
+  contact: () => api.get<{ whatsappPhone: string | null }>('/store/contact', { auth: false }),
 };
 
 export const productsApi = {
@@ -53,10 +57,12 @@ export const productsApi = {
   deactivate: (id: string) => api.post<Product>(`/products/${id}/deactivate`, {}),
   activate: (id: string) => api.post<Product>(`/products/${id}/activate`, {}),
   usage: (id: string) =>
-    api.get<{ orders: number; sales: number; purchases: number; stockMovements: number }>(
-      `/products/${id}/usage`,
+    api.get<ProductUsage>(`/products/${id}/usage`),
+  archive: (id: string) =>
+    api.post<Product & { strategy: 'deleted' | 'archived'; usage: ProductUsage }>(
+      `/products/${id}/archive`,
+      {},
     ),
-  archive: (id: string) => api.post<Product>(`/products/${id}/archive`, {}),
   adjustStock: (id: string, quantityDelta: string, reason?: string) =>
     api.post<Product>(`/products/${id}/stock`, { quantityDelta, reason }),
   stockMovements: (id: string) => api.get<StockMovement[]>(`/products/${id}/stock-movements`),
@@ -119,8 +125,10 @@ export const ordersApi = {
     api.get<Paginated<Order>>(`/orders${toQuery(params)}`),
   one: (id: string) => api.get<Order>(`/orders/${id}`),
   create: (body: Record<string, unknown>) => api.post<Order>('/orders', body),
+  update: (id: string, body: Record<string, unknown>) => api.patch<Order>(`/orders/${id}`, body),
   updateStatus: (id: string, status: OrderStatus) =>
     api.patch<Order>(`/orders/${id}/status`, { status }),
+  remove: (id: string) => api.delete<{ id: string; strategy: 'deleted' }>(`/orders/${id}`),
   /** Kilos realmente pesados al preparar el pedido. */
   updateWeights: (id: string, items: Array<{ itemId: string; actualKg: string }>) =>
     api.patch<Order>(`/orders/${id}/actual-weights`, { items }),
@@ -175,6 +183,12 @@ export const usersApi = {
   update: (id: string, body: Record<string, unknown>) =>
     api.patch<UserAccount>(`/users/${id}`, body),
   remove: (id: string) => api.delete<UserAccount>(`/users/${id}`),
+};
+
+export const settingsApi = {
+  get: () => api.get<OrganizationSettings>('/settings'),
+  update: (body: { whatsappPhone: string | null }) =>
+    api.patch<OrganizationSettings>('/settings', body),
 };
 
 export const dashboardApi = {
@@ -234,6 +248,12 @@ export const weeklyOrdersApi = {
   ) => api.patch<WholesaleOrder>(`/weekly-orders/wholesale/${id}`, body),
   confirmWholesale: (id: string) =>
     api.post<WholesaleOrder>(`/weekly-orders/wholesale/${id}/confirm`),
+  completeSupplierOrder: (body: {
+    weekStart?: string;
+    notes?: string;
+    supplierId?: string;
+    items: WholesaleItemInput[];
+  }) => api.post<Purchase[]>('/weekly-orders/wholesale/complete', body),
   assignSuppliers: (
     id: string,
     items: Array<{ productId: string; supplierId: string; unitCost?: string }>,
@@ -243,10 +263,13 @@ export const weeklyOrdersApi = {
     items: Array<{ productId: string; receivedQty: string }>,
   ) => api.post<Purchase[]>(`/weekly-orders/wholesale/${id}/purchases`, { items }),
   excludeProduct: (productId: string, weekStart?: string) =>
-    api.post<{ productId: string; productName: string; cancelledItems: number; ordersUpdated: number }>(
-      `/weekly-orders/products/${productId}/exclude`,
-      { weekStart },
-    ),
+    api.post<{
+      productId: string;
+      productName: string;
+      cancelledItems: number;
+      ordersUpdated: number;
+      catalogRemoval: { strategy: 'deleted' | 'archived' | 'already_removed' };
+    }>(`/weekly-orders/products/${productId}/exclude`, { weekStart }),
   resetWeek: (weekStart?: string) =>
     api.post<{
       weekStart: string;

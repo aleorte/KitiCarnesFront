@@ -1,23 +1,43 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { storeApi } from '../../api/services';
 import { StatusBadge } from '../../components/commerce';
 import { Button, Field, Input, Skeleton } from '../../components/ui';
-import { ORDER_STATUS_LABEL, type OrderStatus } from '../../types/api';
+import { WhatsAppIcon } from '../../components/whatsapp-button';
+import { ORDER_STATUS_LABEL, type OrderStatus, type StoreCheckoutConfirmation } from '../../types/api';
 import { formatDate, formatMoney, formatQty } from '../../utils/format';
 
-const STEPS: OrderStatus[] = ['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'EN_ENTREGA', 'ENTREGADO'];
+const STEPS: OrderStatus[] = ['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'ENTREGADO'];
+const CHECKOUT_CONFIRMATION_KEY = 'kitikitikiti.checkoutConfirmation';
+
+type TrackingLocationState = {
+  phone?: string;
+  confirmation?: StoreCheckoutConfirmation;
+};
+
+function readStoredConfirmation(orderId: string): StoreCheckoutConfirmation | null {
+  try {
+    const raw = sessionStorage.getItem(CHECKOUT_CONFIRMATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoreCheckoutConfirmation & { orderId?: string };
+    if (parsed.orderId && parsed.orderId !== orderId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 export function OrderTrackingPage({ confirmation = false }: { confirmation?: boolean }) {
   const { id = '' } = useParams();
   const location = useLocation();
+  const locationState = location.state as TrackingLocationState | null;
   const [phone, setPhone] = useState(
-    (location.state as { phone?: string } | null)?.phone
-      ?? sessionStorage.getItem('kitikitikiti.lastPhone')
-      ?? '',
+    locationState?.phone ?? sessionStorage.getItem('kitikitikiti.lastPhone') ?? '',
   );
   const [submittedPhone, setSubmittedPhone] = useState(confirmation ? phone : '');
+  const [whatsAppBlocked, setWhatsAppBlocked] = useState(false);
+  const checkoutConfirmation = locationState?.confirmation ?? readStoredConfirmation(id);
 
   const order = useQuery({
     queryKey: ['track', id, submittedPhone],
@@ -25,17 +45,67 @@ export function OrderTrackingPage({ confirmation = false }: { confirmation?: boo
     enabled: Boolean(id && submittedPhone),
   });
 
+  const pendingWhatsApp =
+    confirmation &&
+    (order.data?.status === 'PENDIENTE_WHATSAPP' || (!order.data && Boolean(checkoutConfirmation)));
+
+  useEffect(() => {
+    if (!confirmation || !checkoutConfirmation?.whatsappUrl) return;
+    const key = `kitikitikiti.waOpened.${id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    const opened = window.open(checkoutConfirmation.whatsappUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) setWhatsAppBlocked(true);
+  }, [checkoutConfirmation, confirmation, id]);
+
   const currentIndex = useMemo(() => {
     const status = order.data?.status;
-    if (!status || status === 'CANCELADO') return -1;
-    if (status === 'LISTO') return STEPS.indexOf('EN_ENTREGA');
+    if (!status || status === 'CANCELADO' || status === 'PENDIENTE_WHATSAPP') return -1;
+    if (status === 'LISTO' || status === 'EN_ENTREGA') return STEPS.indexOf('EN_PREPARACION');
     return Math.max(0, STEPS.indexOf(status));
   }, [order.data?.status]);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
-      <p className="text-xs uppercase tracking-[0.2em] text-blood">{confirmation ? 'Pedido confirmado' : 'Seguimiento'}</p>
-      <h1 className="font-display text-4xl">{confirmation ? 'Ya estamos con tu pedido' : 'Consultá tu pedido'}</h1>
+      <p className="text-xs uppercase tracking-[0.2em] text-blood">
+        {pendingWhatsApp ? 'Pedido pendiente' : confirmation ? 'Pedido recibido' : 'Seguimiento'}
+      </p>
+      <h1 className="font-display text-4xl">
+        {pendingWhatsApp
+          ? 'Enviá el mensaje para confirmar'
+          : confirmation
+            ? 'Ya estamos con tu pedido'
+            : 'Consultá tu pedido'}
+      </h1>
+
+      {pendingWhatsApp ? (
+        <div className="mt-6 space-y-4 rounded-3xl bg-cream p-5">
+          <p className="text-sm text-ink">
+            Para confirmar tu pedido, se abrirá WhatsApp con el mensaje preparado. Solo tenés que enviarlo a la carnicería.
+          </p>
+          {checkoutConfirmation?.whatsappUrl ? (
+            <a
+              href={checkoutConfirmation.whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 rounded-full bg-[#25D366] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:scale-[1.02]"
+            >
+              <WhatsAppIcon className="h-6 w-6" />
+              Abrir conversación
+            </a>
+          ) : (
+            <p className="text-sm text-warn">
+              No pudimos abrir la conversación porque la carnicería todavía no tiene un número configurado. Comunicate con el local para confirmar el pedido.
+            </p>
+          )}
+          {whatsAppBlocked && checkoutConfirmation?.whatsappUrl ? (
+            <p className="text-sm text-ink-soft">
+              Si no se abrió la conversación, usá el botón de arriba para enviarla vos.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <form
         className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]"
         onSubmit={(e) => {

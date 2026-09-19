@@ -1,11 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { customersApi } from '../../api/services';
+import { WhatsAppButton } from '../../components/whatsapp-button';
 import {
   Button,
   ConfirmDialog,
@@ -14,18 +15,27 @@ import {
   Input,
   Modal,
   PageHeader,
+  Select,
   Skeleton,
   Textarea,
 } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
-import type { Customer } from '../../types/api';
+import { PAYMENT_METHOD_LABEL, type Customer, type PaymentMethod } from '../../types/api';
 import { formatDate, formatMoney } from '../../utils/format';
+import { buildCustomerGreeting } from '../../utils/order-whatsapp';
+import { formatWhatsAppDisplay, toWhatsAppNumber } from '../../utils/whatsapp';
 
 const schema = z.object({
   firstName: z.string().min(2, 'Ingresá el nombre'),
   lastName: z.string().min(2, 'Ingresá el apellido'),
-  phone: z.string().min(8, 'Ingresá un teléfono'),
+  phone: z
+    .string()
+    .min(8, 'Ingresá un teléfono')
+    .refine((value) => Boolean(toWhatsAppNumber(value)), {
+      message: 'Ingresá un WhatsApp válido, por ejemplo +54 9 3493 123456',
+    }),
   address: z.string().min(5, 'Ingresá la dirección'),
+  preferredPaymentMethod: z.enum(['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'OTRO']).optional(),
   notes: z.string().optional(),
 });
 
@@ -93,8 +103,9 @@ export function CustomersPage() {
     form.reset({
       firstName: customer?.firstName ?? '',
       lastName: customer?.lastName ?? '',
-      phone: customer?.phone ?? '',
+      phone: formatWhatsAppDisplay(customer?.phone) ?? customer?.phone ?? '',
       address: customer?.address ?? '',
+      preferredPaymentMethod: (customer?.preferredPaymentMethod ?? 'EFECTIVO') as PaymentMethod,
       notes: customer?.notes ?? '',
     });
     setOpen(true);
@@ -104,7 +115,7 @@ export function CustomersPage() {
     <div>
       <PageHeader
         title="Clientes"
-        description="Solo los datos que hacen falta para entregar: nombre, teléfono y dirección."
+        description="Nombre, teléfono, dirección y método de pago habitual."
         actions={canManage ? <Button onClick={() => openForm()}>Nuevo cliente</Button> : null}
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -141,6 +152,7 @@ export function CustomersPage() {
                   </button>
                 </th>
                 <th className="px-4 py-3">Dirección</th>
+                <th className="px-4 py-3">Pago</th>
                 <th className="px-4 py-3 text-right">Acciones</th>
               </tr>
             </thead>
@@ -169,19 +181,30 @@ export function CustomersPage() {
                     </a>
                   </td>
                   <td className="text-ink-soft sm:px-4 sm:py-3">{customer.address}</td>
+                  <td className="text-ink-soft sm:px-4 sm:py-3">
+                    {customer.preferredPaymentMethod
+                      ? PAYMENT_METHOD_LABEL[customer.preferredPaymentMethod]
+                      : '—'}
+                  </td>
                   <td className="sm:px-4 sm:py-3 sm:text-right">
-                    {canManage ? (
-                      <div className="flex gap-2 sm:justify-end">
-                        <Button variant="secondary" onClick={() => openForm(customer)}>
-                          Editar
-                        </Button>
-                        {!customer.deletedAt ? (
-                          <Button variant="danger" onClick={() => setPendingDelete(customer)}>
-                            Eliminar
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <WhatsAppButton
+                        phone={customer.phone}
+                        message={buildCustomerGreeting(customer.firstName)}
+                      />
+                      {canManage ? (
+                        <>
+                          <Button variant="secondary" onClick={() => openForm(customer)}>
+                            Editar
                           </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
+                          {!customer.deletedAt ? (
+                            <Button variant="danger" onClick={() => setPendingDelete(customer)}>
+                              Eliminar
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -197,7 +220,7 @@ export function CustomersPage() {
       <Modal
         open={open}
         title={editing ? 'Editar cliente' : 'Nuevo cliente'}
-        description="Solo nombre, teléfono, dirección y una nota si hace falta."
+        description="Nombre, teléfono, dirección y método de pago."
         onClose={() => setOpen(false)}
       >
         <form className="space-y-3" onSubmit={form.handleSubmit((values) => save.mutate(values))}>
@@ -212,6 +235,15 @@ export function CustomersPage() {
           </Field>
           <Field label="Dirección" error={form.formState.errors.address?.message}>
             <Input {...form.register('address')} />
+          </Field>
+          <Field label="Método de pago">
+            <Select {...form.register('preferredPaymentMethod')}>
+              {(Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[]).map((method) => (
+                <option key={method} value={method}>
+                  {PAYMENT_METHOD_LABEL[method]}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="Notas">
             <Textarea {...form.register('notes')} />
@@ -237,10 +269,44 @@ export function CustomersPage() {
 
 export function CustomerDetailPage() {
   const { id = '' } = useParams();
+  const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
+  const canManage = hasPermission('customers:manage');
   const customer = useQuery({ queryKey: ['customer', id], queryFn: () => customersApi.one(id) });
   const history = useQuery({
     queryKey: ['customer-history', id],
     queryFn: () => customersApi.history(id),
+  });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema) });
+
+  useEffect(() => {
+    if (!customer.data) return;
+    form.reset({
+      firstName: customer.data.firstName,
+      lastName: customer.data.lastName,
+      phone: formatWhatsAppDisplay(customer.data.phone) ?? customer.data.phone,
+      address: customer.data.address,
+      preferredPaymentMethod: (customer.data.preferredPaymentMethod ?? 'EFECTIVO') as PaymentMethod,
+      notes: customer.data.notes ?? '',
+    });
+  }, [customer.data, form]);
+
+  const save = useMutation({
+    mutationFn: (values: FormValues) => customersApi.update(id, values),
+    onSuccess: (result) => {
+      toast.success('Cambios guardados');
+      void queryClient.invalidateQueries({ queryKey: ['customer', id] });
+      void queryClient.invalidateQueries({ queryKey: ['customers'] });
+      form.reset({
+        firstName: result.firstName,
+        lastName: result.lastName,
+        phone: formatWhatsAppDisplay(result.phone) ?? result.phone,
+        address: result.address,
+        preferredPaymentMethod: (result.preferredPaymentMethod ?? 'EFECTIVO') as PaymentMethod,
+        notes: result.notes ?? '',
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 
   if (!customer.data) return <Skeleton className="h-80" />;
@@ -249,13 +315,57 @@ export function CustomerDetailPage() {
     <div>
       <PageHeader
         title={`${customer.data.firstName} ${customer.data.lastName}`}
-        description={`${customer.data.phone} · ${customer.data.address}`}
+        description={`${formatWhatsAppDisplay(customer.data.phone) ?? customer.data.phone} · ${customer.data.address}`}
+        actions={
+          <WhatsAppButton
+            phone={customer.data.phone}
+            message={buildCustomerGreeting(customer.data.firstName)}
+            label="Contactar por WhatsApp"
+          />
+        }
       />
       {customer.data.deletedAt ? (
         <p className="mb-6 rounded-2xl bg-paper p-3 text-sm text-ink-soft">
           Este cliente está dado de baja. Su historial se conserva para los reportes.
         </p>
       ) : null}
+      <section className="mb-8 max-w-xl rounded-3xl bg-cream p-5">
+        <h2 className="font-display text-2xl">Cliente</h2>
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={form.handleSubmit((values) => save.mutate(values))}
+        >
+          <Field label="Nombre" error={form.formState.errors.firstName?.message}>
+            <Input {...form.register('firstName')} disabled={!canManage || Boolean(customer.data.deletedAt)} />
+          </Field>
+          <Field label="Apellido" error={form.formState.errors.lastName?.message}>
+            <Input {...form.register('lastName')} disabled={!canManage || Boolean(customer.data.deletedAt)} />
+          </Field>
+          <Field label="Teléfono" error={form.formState.errors.phone?.message}>
+            <Input {...form.register('phone')} disabled={!canManage || Boolean(customer.data.deletedAt)} />
+          </Field>
+          <Field label="Dirección" error={form.formState.errors.address?.message}>
+            <Input {...form.register('address')} disabled={!canManage || Boolean(customer.data.deletedAt)} />
+          </Field>
+          <Field label="Método de pago">
+            <Select
+              {...form.register('preferredPaymentMethod')}
+              disabled={!canManage || Boolean(customer.data.deletedAt)}
+            >
+              {(Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[]).map((method) => (
+                <option key={method} value={method}>
+                  {PAYMENT_METHOD_LABEL[method]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {canManage && !customer.data.deletedAt ? (
+            <Button type="submit" className="w-full" disabled={save.isPending}>
+              {save.isPending ? 'Guardando...' : 'Guardar cambios'}
+            </Button>
+          ) : null}
+        </form>
+      </section>
       <p className="mb-6 text-ink-soft">{customer.data.notes || 'Sin indicaciones extra.'}</p>
       <p className="mb-6 text-sm text-ink-soft">
         {history.data?.orders.length ?? 0} pedidos · {history.data?.sales.length ?? 0} ventas de

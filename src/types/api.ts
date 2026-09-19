@@ -2,6 +2,7 @@ export type Role = 'ADMIN' | 'EMPLEADO';
 export type SaleUnit = 'UNIT' | 'KILOGRAM';
 export type OrderStatus =
   | 'PENDIENTE'
+  | 'PENDIENTE_WHATSAPP'
   | 'CONFIRMADO'
   | 'EN_PREPARACION'
   | 'LISTO'
@@ -75,12 +76,20 @@ export type Product = {
   updatedAt?: string;
 };
 
+export type OrganizationSettings = {
+  organizationId: string;
+  name: string;
+  slug: string;
+  whatsappPhone: string | null;
+};
+
 export type Customer = {
   id: string;
   firstName: string;
   lastName: string;
   phone: string;
   address: string;
+  preferredPaymentMethod?: PaymentMethod | null;
   notes?: string | null;
   /** Baja lógica: el cliente se archiva cuando tiene historial. */
   deletedAt?: string | null;
@@ -98,12 +107,14 @@ export type OrderItem = {
   estimatedMinKg?: string | null;
   estimatedMaxKg?: string | null;
   estimatedLineTotalMax?: string | null;
-  /** Kilos realmente pesados al preparar el pedido. */
+  /** Kilos realmente pesados al entregar, solo en cortes de peso variable. */
   actualKg?: string | null;
   unitPrice: string;
   unitCost?: string | null;
   estimatedLineTotal: string;
   finalLineTotal?: string | null;
+  weeklyCoveredAt?: string | null;
+  cancelledAt?: string | null;
 };
 
 export type Order = {
@@ -118,6 +129,18 @@ export type Order = {
   customer?: Customer;
   items: OrderItem[];
   payments?: Payment[];
+  sale?: { id: string; total?: string; paymentStatus?: PaymentStatus } | null;
+  stockDeducted?: boolean;
+};
+
+export type StoreCheckoutConfirmation = {
+  shopWhatsApp: string | null;
+  message: string;
+  whatsappUrl: string | null;
+};
+
+export type StoreCheckoutResponse = Order & {
+  confirmation: StoreCheckoutConfirmation;
 };
 
 export type SaleItem = {
@@ -272,6 +295,7 @@ export type WeeklyProductSummary = {
   pendingQuantity: string;
   totalQuantity: string;
   stock: string;
+  catalogDeleted?: boolean;
   planningUnit: SaleUnit;
   planningDemand: string;
   estimatedDemandKgMin?: string | null;
@@ -279,6 +303,7 @@ export type WeeklyProductSummary = {
   purchaseNeed: string;
   suggestedQty: string;
   surplusQty: string;
+  shortageQty?: string;
   belowMinimum?: boolean;
   cancelledQuantity?: string;
   excluded?: boolean;
@@ -390,6 +415,7 @@ export type WeeklyProductSources = {
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   PENDIENTE: 'Pendiente',
+  PENDIENTE_WHATSAPP: 'Pendiente de WhatsApp',
   CONFIRMADO: 'Confirmado',
   EN_PREPARACION: 'En preparación',
   LISTO: 'Listo',
@@ -402,15 +428,53 @@ export const ORDER_FLOW: OrderStatus[] = [
   'PENDIENTE',
   'CONFIRMADO',
   'EN_PREPARACION',
-  'LISTO',
-  'EN_ENTREGA',
   'ENTREGADO',
 ];
+
+export const ORDER_STATUS_FILTER: OrderStatus[] = [
+  'PENDIENTE_WHATSAPP',
+  'PENDIENTE',
+  'CONFIRMADO',
+  'EN_PREPARACION',
+  'ENTREGADO',
+  'CANCELADO',
+  'LISTO',
+  'EN_ENTREGA',
+];
+
+export function isOrderEditable(status: OrderStatus) {
+  return (
+    status === 'PENDIENTE_WHATSAPP' ||
+    status === 'PENDIENTE' ||
+    status === 'CONFIRMADO' ||
+    status === 'EN_PREPARACION'
+  );
+}
+
+export function isOrderDeletable(order: Pick<Order, 'status' | 'paymentStatus' | 'sale' | 'payments' | 'items'>) {
+  if (order.status === 'ENTREGADO') return false;
+  if (order.paymentStatus === 'PAGADO' || order.paymentStatus === 'PAGO_PARCIAL') return false;
+  if (order.sale) return false;
+  if ((order.payments?.length ?? 0) > 0) return false;
+  if (order.items.some((item) => item.weeklyCoveredAt)) return false;
+  return true;
+}
+
+export function orderFlowIndex(status: OrderStatus) {
+  if (status === 'CANCELADO') return -1;
+  if (status === 'PENDIENTE_WHATSAPP') return ORDER_FLOW.indexOf('PENDIENTE');
+  if (status === 'LISTO' || status === 'EN_ENTREGA') return ORDER_FLOW.indexOf('EN_PREPARACION');
+  return Math.max(0, ORDER_FLOW.indexOf(status));
+}
 
 export const ORDER_STATUS_ACTIONS: Record<
   OrderStatus,
   Array<{ to: OrderStatus; label: string; variant: 'primary' | 'secondary' | 'danger' }>
 > = {
+  PENDIENTE_WHATSAPP: [
+    { to: 'CONFIRMADO', label: 'Confirmar', variant: 'primary' },
+    { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
+  ],
   PENDIENTE: [
     { to: 'CONFIRMADO', label: 'Confirmar', variant: 'primary' },
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
@@ -420,13 +484,11 @@ export const ORDER_STATUS_ACTIONS: Record<
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
   ],
   EN_PREPARACION: [
-    { to: 'LISTO', label: 'Marcar listo', variant: 'secondary' },
     { to: 'ENTREGADO', label: 'Entregar', variant: 'primary' },
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
   ],
   LISTO: [
     { to: 'ENTREGADO', label: 'Entregar', variant: 'primary' },
-    { to: 'EN_ENTREGA', label: 'En camino', variant: 'secondary' },
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
   ],
   EN_ENTREGA: [
@@ -457,12 +519,13 @@ export type ProductUsage = {
   sales: number;
   purchases: number;
   stockMovements: number;
+  wholesaleItems?: number;
 };
 
 export const PRODUCT_STATUS_LABEL: Record<Exclude<ProductListStatus, 'all' | 'catalog'>, string> = {
   active: 'Activo',
   inactive: 'Inactivo',
-  archived: 'Dado de baja',
+  archived: 'Fuera de catálogo',
 };
 
 export const WHOLESALE_STATUS_LABEL: Record<WholesaleOrderStatus, string> = {

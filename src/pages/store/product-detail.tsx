@@ -40,7 +40,7 @@ export function ProductDetailPage() {
           </p>
           {variable ? (
             <p className="mt-1 text-sm text-ink-soft">
-              Pedís unidades. El peso real lo registra la carnicería al preparar el pedido.
+              Pedís unidades. El peso real lo registra la carnicería al entregar el pedido.
             </p>
           ) : null}
           {isKg ? (
@@ -77,7 +77,7 @@ export function ProductDetailPage() {
             <span className="text-sm text-ink-soft">{variable ? 'Precio estimado' : 'Subtotal estimado'}</span>
             <span className="font-display text-3xl">{formatMoneyRange(range.min, range.max)}</span>
           </div>
-          {variable || isKg ? (
+          {variable ? (
             <p className="mt-2 text-sm font-medium text-warn">
               Este importe no es definitivo. El precio final = peso real × {formatMoney(item.salePrice)}/kg.
             </p>

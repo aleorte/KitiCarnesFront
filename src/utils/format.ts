@@ -89,7 +89,12 @@ export function isVariableWeight(item: {
   estimatedMinKg?: string | number | null;
   estimatedMaxKg?: string | number | null;
 }) {
-  return item.estimatedMinKg != null && item.estimatedMaxKg != null && item.estimatedMinKg !== '' && item.estimatedMaxKg !== '';
+  if (item.estimatedMinKg == null || item.estimatedMaxKg == null || item.estimatedMinKg === '' || item.estimatedMaxKg === '') {
+    return false;
+  }
+  const min = Number(item.estimatedMinKg);
+  const max = Number(item.estimatedMaxKg);
+  return min > 0 && max > min;
 }
 
 export function needsWeighing(item: {
@@ -97,7 +102,7 @@ export function needsWeighing(item: {
   estimatedMinKg?: string | number | null;
   estimatedMaxKg?: string | number | null;
 }) {
-  return item.saleUnit === 'KILOGRAM' || isVariableWeight(item);
+  return isVariableWeight(item);
 }
 
 export function formatEstimatedKgRange(minKg: string | number | null | undefined, maxKg: string | number | null | undefined) {

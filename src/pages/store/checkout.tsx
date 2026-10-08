@@ -10,6 +10,7 @@ import { WeightPriceNotice } from '../../components/commerce';
 import { Button, Field, Input, Textarea } from '../../components/ui';
 import { WhatsAppButton } from '../../components/whatsapp-button';
 import { useCart } from '../../hooks/use-cart';
+import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import type { StoreCheckoutConfirmation } from '../../types/api';
 import { estimatedLineTotals, formatMoneyRange, toDecimalString } from '../../utils/format';
 import { STORE_EXTRA_ORDER_WHATSAPP_MESSAGE, toWhatsAppNumber } from '../../utils/whatsapp';
@@ -44,18 +45,15 @@ export function CheckoutPage() {
   const form = useForm<FormValues>({ resolver: zodResolver(schema) });
   const whatsappTabRef = useRef<Window | null>(null);
   const submitLockRef = useRef(false);
-  const catalog = useQuery({
-    queryKey: ['store-products', '', ''],
-    queryFn: () => storeApi.products(),
-    enabled: items.length > 0,
-  });
+  const catalog = useStoreCatalog({ enabled: items.length > 0 });
   const contact = useQuery({
     queryKey: ['store-contact'],
     queryFn: storeApi.contact,
     staleTime: 5 * 60 * 1000,
   });
   const unavailable = items.filter(
-    (item) => catalog.isSuccess && !(catalog.data ?? []).some((product) => product.id === item.productId),
+    (item) =>
+      catalog.isSuccess && !(catalog.data?.products ?? []).some((product) => product.id === item.productId),
   );
 
   const mutation = useMutation({

@@ -1,4 +1,4 @@
-import { api, fetchText, toQuery } from './client';
+import { api, fetchText, postForm, toQuery } from './client';
 import type {
   AuthResponse,
   AuthUser,
@@ -19,6 +19,7 @@ import type {
   SaleUnit,
   StockMovement,
   StockOverview,
+  StoreCatalog,
   StoreCheckoutResponse,
   Supplier,
   SupplierCategory,
@@ -37,6 +38,7 @@ export const authApi = {
 };
 
 export const storeApi = {
+  catalog: () => api.get<StoreCatalog>('/store/catalog', { auth: false }),
   categories: () => api.get<Category[]>('/store/categories', { auth: false }),
   products: (params: { search?: string; categoryId?: string } = {}) =>
     api.get<Product[]>(`/store/products${toQuery(params)}`, { auth: false }),
@@ -52,6 +54,11 @@ export const productsApi = {
   list: (params: Record<string, string | number | boolean | undefined> = {}) =>
     api.get<Paginated<Product>>(`/products${toQuery(params)}`),
   one: (id: string) => api.get<Product>(`/products/${id}`),
+  uploadImage: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return postForm<{ imageUrl: string }>('/products/images', form);
+  },
   create: (body: Record<string, unknown>) => api.post<Product>('/products', body),
   update: (id: string, body: Record<string, unknown>) => api.patch<Product>(`/products/${id}`, body),
   remove: (id: string) => api.delete<Product>(`/products/${id}`),

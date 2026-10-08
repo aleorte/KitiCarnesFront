@@ -133,6 +133,11 @@ export type Order = {
   stockDeducted?: boolean;
 };
 
+export type StoreCatalog = {
+  categories: Category[];
+  products: Product[];
+};
+
 export type StoreCheckoutConfirmation = {
   shopWhatsApp: string | null;
   message: string;

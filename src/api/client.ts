@@ -27,6 +27,17 @@ type RequestOptions = Omit<RequestInit, 'body'> & {
 
 const API_BASE = apiBaseUrl();
 
+async function readErrorMessage(response: Response, fallback: string) {
+  try {
+    const payload = (await response.json()) as { message?: string | string[] };
+    return Array.isArray(payload.message)
+      ? payload.message.join('. ')
+      : payload.message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, auth = true, headers, ...rest } = options;
   const token = getToken();
@@ -46,14 +57,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!response.ok) {
-    let message = 'No se pudo completar la operación';
-    try {
-      const payload = (await response.json()) as { message?: string | string[] };
-      message = Array.isArray(payload.message) ? payload.message.join('. ') : payload.message ?? message;
-    } catch {
-      /* empty */
-    }
-    throw new ApiError(response.status, message);
+    throw new ApiError(
+      response.status,
+      await readErrorMessage(response, 'No se pudo completar la operación'),
+    );
   }
 
   if (response.status === 204) {
@@ -77,17 +84,36 @@ export async function fetchText(path: string): Promise<string> {
   }
 
   if (!response.ok) {
-    let message = 'No se pudo completar la operación';
-    try {
-      const payload = (await response.json()) as { message?: string | string[] };
-      message = Array.isArray(payload.message) ? payload.message.join('. ') : payload.message ?? message;
-    } catch {
-      /* empty */
-    }
-    throw new ApiError(response.status, message);
+    throw new ApiError(
+      response.status,
+      await readErrorMessage(response, 'No se pudo completar la operación'),
+    );
   }
 
   return response.text();
+}
+
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (response.status === 401) {
+    setToken(null);
+    window.dispatchEvent(new Event('kitikitikiti:logout'));
+  }
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      await readErrorMessage(response, 'No se pudo completar la operación'),
+    );
+  }
+
+  return (await response.json()) as T;
 }
 
 export const api = {

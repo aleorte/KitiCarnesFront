@@ -1,5 +1,6 @@
 import { Beef } from 'lucide-react';
 import { ORDER_STATUS_LABEL, type OrderStatus, type Product } from '../types/api';
+import { productImageSrc } from '../utils/product-image';
 import { Badge } from './ui';
 import {
   formatEstimatedKgRange,
@@ -10,9 +11,27 @@ import {
   isVariableWeight,
 } from '../utils/format';
 
-export function ProductMedia({ product, className = '' }: { product: Pick<Product, 'name' | 'imageUrl'>; className?: string }) {
-  if (product.imageUrl) {
-    return <img src={product.imageUrl} alt={product.name} className={`object-cover ${className}`} />;
+export function ProductMedia({
+  product,
+  className = '',
+  priority = false,
+}: {
+  product: Pick<Product, 'name' | 'imageUrl'>;
+  className?: string;
+  priority?: boolean;
+}) {
+  const src = productImageSrc(product.imageUrl);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={product.name}
+        className={`object-cover ${className}`}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={priority ? 'high' : 'low'}
+      />
+    );
   }
 
   return (

@@ -313,6 +313,7 @@ export function WeeklyOrdersPage() {
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
       void queryClient.invalidateQueries({ queryKey: ['store-products'] });
+      void queryClient.invalidateQueries({ queryKey: ['store-catalog'] });
       setExcludingProduct(null);
     },
     onError: (error: Error) => toast.error(error.message),

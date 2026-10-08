@@ -79,6 +79,7 @@ export function ProductsPage() {
   } | null>(null);
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<ProductListStatus>('catalog');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const products = useQuery({
     queryKey: ['admin-products', categoryFilter, statusFilter],
     queryFn: () =>
@@ -101,6 +102,7 @@ export function ProductsPage() {
 
   const refreshProducts = () => {
     void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+    void queryClient.invalidateQueries({ queryKey: ['store-catalog'] });
     void queryClient.invalidateQueries({ queryKey: ['store-products'] });
     void queryClient.invalidateQueries({ queryKey: ['store-categories'] });
     void queryClient.invalidateQueries({ queryKey: ['store-product'] });
@@ -112,7 +114,11 @@ export function ProductsPage() {
     mutationFn: (values: FormValues) => {
       const payload = {
         ...values,
-        imageUrl: values.imageUrl || undefined,
+        imageUrl: values.imageUrl?.trim()
+          ? values.imageUrl.trim()
+          : editing
+            ? null
+            : undefined,
         estimatedMinKg:
           values.saleUnit === 'UNIT' && values.estimatedMinKg ? values.estimatedMinKg : null,
         estimatedMaxKg:
@@ -161,6 +167,7 @@ export function ProductsPage() {
   });
 
   const openForm = (product?: Product) => {
+    setUploadingImage(false);
     setEditing(product ?? null);
     form.reset({
       name: product?.name ?? '',
@@ -202,7 +209,7 @@ export function ProductsPage() {
         description="Se usan en el mostrador y al cargar productos. Son opcionales: si eliminás una, los productos quedan sin categoría."
         canManage={hasPermission('categories:manage')}
         queryKey="admin-categories"
-        invalidateKeys={['admin-products', 'store-categories', 'store-products']}
+        invalidateKeys={['admin-products', 'store-catalog', 'store-categories', 'store-products']}
         api={categoriesApi}
         countOf={(category) => category._count?.products ?? 0}
         linkedNoun={{ singular: 'producto', plural: 'productos' }}
@@ -336,9 +343,50 @@ export function ProductsPage() {
           <Field label="Descripción">
             <Textarea rows={3} {...form.register('description')} />
           </Field>
-          <Field label="URL de imagen">
-            <Input {...form.register('imageUrl')} placeholder="https://..." />
+          <Field
+            label="Foto del corte"
+            hint="Subí un PNG (también JPG o WebP) de hasta 4 MB. Se comprime para que el mostrador cargue rápido."
+          >
+            <Input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+              disabled={uploadingImage || save.isPending}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (!file) return;
+                void (async () => {
+                  try {
+                    setUploadingImage(true);
+                    const result = await productsApi.uploadImage(file);
+                    form.setValue('imageUrl', result.imageUrl, { shouldDirty: true });
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : 'No se pudo subir la imagen');
+                  } finally {
+                    setUploadingImage(false);
+                  }
+                })();
+              }}
+            />
+            {uploadingImage ? <p className="text-sm text-ink-soft">Subiendo y comprimiendo la foto...</p> : null}
+            {form.watch('imageUrl') ? (
+              <div className="space-y-2">
+                <ProductMedia
+                  product={{ name: form.watch('name') || 'Corte', imageUrl: form.watch('imageUrl') }}
+                  className="h-40 w-full rounded-2xl"
+                  priority
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => form.setValue('imageUrl', '', { shouldDirty: true })}
+                >
+                  Quitar foto
+                </Button>
+              </div>
+            ) : null}
           </Field>
+          <input type="hidden" {...form.register('imageUrl')} />
           <Field label="Precio de venta por kg o unidad" error={form.formState.errors.salePrice?.message}>
             <Input {...form.register('salePrice')} />
           </Field>

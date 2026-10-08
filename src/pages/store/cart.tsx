@@ -1,19 +1,14 @@
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { storeApi } from '../../api/services';
 import { ProductMedia, QuantityLabel, WeightPriceNotice } from '../../components/commerce';
 import { Button, EmptyState, Input } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
+import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { estimatedLineTotals, formatMoney, formatMoneyRange } from '../../utils/format';
 
 export function CartPage() {
   const { items, update, remove, estimatedTotalMin, estimatedTotalMax, hasWeightItems } = useCart();
-  const catalog = useQuery({
-    queryKey: ['store-products', '', ''],
-    queryFn: () => storeApi.products(),
-    enabled: items.length > 0,
-  });
-  const availableIds = new Set((catalog.data ?? []).map((product) => product.id));
+  const catalog = useStoreCatalog({ enabled: items.length > 0 });
+  const availableIds = new Set((catalog.data?.products ?? []).map((product) => product.id));
   const unavailable = items.filter((item) => catalog.isSuccess && !availableIds.has(item.productId));
 
   if (!items.length) {

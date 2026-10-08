@@ -5,6 +5,7 @@ import { storeApi } from '../api/services';
 import { BRAND_NAME } from '../brand';
 import { WhatsAppIcon } from '../components/whatsapp-button';
 import { useCart } from '../hooks/use-cart';
+import { useStoreCatalog } from '../hooks/use-store-catalog';
 import { openWhatsApp } from '../utils/whatsapp';
 
 const links = [
@@ -21,6 +22,7 @@ export function StoreLayout() {
     queryFn: storeApi.contact,
     staleTime: 5 * 60 * 1000,
   });
+  useStoreCatalog();
   const shopWhatsApp = contact.data?.whatsappPhone;
 
   return (

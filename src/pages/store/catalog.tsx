@@ -1,25 +1,33 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { storeApi } from '../../api/services';
 import { BRAND_TAGLINE } from '../../brand';
 import { BrandLogo } from '../../components/brand-logo';
 import { PriceTag, ProductMedia } from '../../components/commerce';
 import { Button, EmptyState, Input, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
+import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { isVariableWeight } from '../../utils/format';
 
 export function CatalogPage() {
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const { add } = useCart();
-  const categories = useQuery({ queryKey: ['store-categories'], queryFn: storeApi.categories });
-  const products = useQuery({
-    queryKey: ['store-products', search, categoryId],
-    queryFn: () => storeApi.products({ search: search || undefined, categoryId: categoryId || undefined }),
-  });
+  const catalog = useStoreCatalog();
+  const categories = catalog.data?.categories ?? [];
+  const products = useMemo(() => {
+    const all = catalog.data?.products ?? [];
+    const needle = search.trim().toLowerCase();
+    return all.filter((product) => {
+      if (categoryId && product.categoryId !== categoryId) return false;
+      if (!needle) return true;
+      return (
+        product.name.toLowerCase().includes(needle) ||
+        (product.description ?? '').toLowerCase().includes(needle)
+      );
+    });
+  }, [catalog.data?.products, categoryId, search]);
 
   return (
     <div>
@@ -61,7 +69,7 @@ export function CatalogPage() {
           >
             Todos
           </button>
-          {categories.data?.map((category) => (
+          {categories.map((category) => (
             <button
               key={category.id}
               onClick={() => setCategoryId(category.id)}
@@ -73,18 +81,18 @@ export function CatalogPage() {
         </div>
 
         <h2 className="mt-8 font-display text-3xl">Cortes disponibles</h2>
-        {products.isLoading ? (
+        {catalog.isLoading ? (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-72" />
             ))}
           </div>
-        ) : products.data?.length ? (
+        ) : products.length ? (
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {products.data.map((product) => (
+            {products.map((product, index) => (
               <article key={product.id} className="overflow-hidden rounded-3xl bg-cream">
                 <Link to={`/producto/${product.id}`}>
-                  <ProductMedia product={product} className="h-44 w-full" />
+                  <ProductMedia product={product} className="h-44 w-full" priority={index < 3} />
                 </Link>
                 <div className="space-y-4 p-5">
                   <div>

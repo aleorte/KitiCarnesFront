@@ -6,25 +6,34 @@ import { storeApi } from '../../api/services';
 import { PriceTag, ProductMedia, WeightPriceNotice } from '../../components/commerce';
 import { Button, Input, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
+import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { formatMoney, formatMoneyRange, estimatedLineTotals, isVariableWeight } from '../../utils/format';
 
 export function ProductDetailPage() {
   const { id = '' } = useParams();
   const { add } = useCart();
-  const product = useQuery({ queryKey: ['store-product', id], queryFn: () => storeApi.product(id) });
+  const catalog = useStoreCatalog();
+  const cached = catalog.data?.products.find((product) => product.id === id);
+  const product = useQuery({
+    queryKey: ['store-product', id],
+    queryFn: () => storeApi.product(id),
+    enabled: Boolean(id) && !cached && !catalog.isLoading,
+    staleTime: 60_000,
+  });
   const [qty, setQty] = useState(1);
+  const item = cached ?? product.data;
 
-  if (product.isLoading) return <div className="mx-auto max-w-6xl px-4 py-10"><Skeleton className="h-[480px]" /></div>;
-  if (!product.data) return <p className="p-10">El producto no está disponible.</p>;
-
-  const item = product.data;
+  if (catalog.isLoading || (!item && product.isLoading)) {
+    return <div className="mx-auto max-w-6xl px-4 py-10"><Skeleton className="h-[480px]" /></div>;
+  }
+  if (!item) return <p className="p-10">El producto no está disponible.</p>;
   const isKg = item.saleUnit === 'KILOGRAM';
   const variable = isVariableWeight(item);
   const range = estimatedLineTotals({ ...item, quantity: qty });
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-2">
-      <ProductMedia product={item} className="h-[420px] w-full rounded-3xl" />
+      <ProductMedia product={item} className="h-[420px] w-full rounded-3xl" priority />
       <div>
         <Link to="/" className="text-sm text-blood">Volver al mostrador</Link>
         <p className="mt-4 text-xs uppercase tracking-[0.2em] text-ink-soft/70">{item.category?.name}</p>

@@ -43,7 +43,7 @@ export function CartPage() {
           const inactive = catalog.isSuccess && !availableIds.has(item.productId);
           return (
             <article key={item.productId} className="grid grid-cols-[96px_1fr] gap-4 rounded-3xl bg-cream p-4 sm:grid-cols-[120px_1fr_auto]">
-              <ProductMedia product={item} className="h-24 w-full rounded-2xl" />
+              <ProductMedia product={item} className="h-24 w-full rounded-2xl sm:h-[7.5rem]" />
               <div>
                 <h2 className="font-display text-2xl">{item.name}</h2>
                 {inactive ? (

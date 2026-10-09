@@ -33,7 +33,11 @@ export function ProductDetailPage() {
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-2">
-      <ProductMedia product={item} className="h-[420px] w-full rounded-3xl" priority />
+      <ProductMedia
+        product={item}
+        className="aspect-[4/3] w-full rounded-3xl shadow-card lg:aspect-auto lg:min-h-[28rem] lg:h-full"
+        priority
+      />
       <div>
         <Link to="/" className="text-sm text-blood">Volver al mostrador</Link>
         <p className="mt-4 text-xs uppercase tracking-[0.2em] text-ink-soft/70">{item.category?.name}</p>

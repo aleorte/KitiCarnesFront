@@ -1,5 +1,6 @@
 import { Beef } from 'lucide-react';
 import { ORDER_STATUS_LABEL, type OrderStatus, type Product } from '../types/api';
+import { cn } from '../utils/format';
 import { productImageSrc } from '../utils/product-image';
 import { Badge } from './ui';
 import {
@@ -21,22 +22,22 @@ export function ProductMedia({
   priority?: boolean;
 }) {
   const src = productImageSrc(product.imageUrl);
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={product.name}
-        className={`object-cover ${className}`}
-        loading={priority ? 'eager' : 'lazy'}
-        decoding="async"
-        fetchPriority={priority ? 'high' : 'low'}
-      />
-    );
-  }
-
   return (
-    <div className={`flex items-center justify-center bg-linear-to-br from-ink to-blood-dark text-gold ${className}`}>
-      <Beef className="h-10 w-10" />
+    <div className={cn('overflow-hidden bg-ink', className)}>
+      {src ? (
+        <img
+          src={src}
+          alt={product.name}
+          className="h-full w-full object-cover object-center"
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+          fetchPriority={priority ? 'high' : 'low'}
+        />
+      ) : (
+        <div className="flex h-full min-h-full w-full items-center justify-center bg-linear-to-br from-ink to-blood-dark text-gold">
+          <Beef className="h-10 w-10" />
+        </div>
+      )}
     </div>
   );
 }
@@ -44,16 +45,18 @@ export function ProductMedia({
 export function PriceTag({
   product,
   quantity = 1,
+  className = '',
 }: {
   product: Pick<Product, 'salePrice' | 'saleUnit' | 'estimatedMinKg' | 'estimatedMaxKg'>;
   quantity?: number;
+  className?: string;
 }) {
   const variable = isVariableWeight(product);
   const pricedByKg = product.saleUnit === 'KILOGRAM' || variable;
   const range = estimatedLineTotals({ ...product, quantity });
 
   return (
-    <div>
+    <div className={className}>
       <p className="font-display text-2xl">{formatMoney(product.salePrice)}</p>
       <p className="text-xs uppercase tracking-widest text-ink-soft/70">{pricedByKg ? 'por kg' : 'por unidad'}</p>
       {variable ? (

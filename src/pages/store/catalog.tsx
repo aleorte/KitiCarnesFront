@@ -8,7 +8,8 @@ import { PriceTag, ProductMedia } from '../../components/commerce';
 import { Button, EmptyState, Input, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
-import { isVariableWeight } from '../../utils/format';
+import { cn, isVariableWeight } from '../../utils/format';
+import type { Product } from '../../types/api';
 
 export function CatalogPage() {
   const [search, setSearch] = useState('');
@@ -31,10 +32,10 @@ export function CatalogPage() {
 
   return (
     <div>
-      <section className="border-b border-line bg-ink text-cream">
+      <section className="border-b border-gold/40 bg-ink text-cream">
         <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-12 lg:flex-row lg:items-center lg:gap-12 lg:py-14">
           <div className="flex min-w-0 flex-1 flex-col items-center gap-6 text-center md:flex-row md:items-center md:gap-8 md:text-left lg:gap-10">
-            <BrandLogo className="h-44 shrink-0 sm:h-48 lg:h-56" />
+            <BrandLogo className="h-40 shrink-0 drop-shadow-sm sm:h-44 lg:h-52" size="hero" />
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-gold">{BRAND_TAGLINE}</p>
               <h1 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl lg:text-6xl">
@@ -47,7 +48,11 @@ export function CatalogPage() {
               </p>
             </div>
           </div>
-          <form className="w-full shrink-0 rounded-3xl bg-cream p-4 text-ink lg:max-w-sm" onSubmit={(e) => e.preventDefault()}>
+          <form
+            className="w-full shrink-0 rounded-3xl border border-gold/50 bg-cream p-4 text-ink shadow-card lg:max-w-sm"
+            onSubmit={(e) => e.preventDefault()}
+          >
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink-soft/70">Buscar corte</p>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft/50" />
               <Input
@@ -65,7 +70,10 @@ export function CatalogPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           <button
             onClick={() => setCategoryId('')}
-            className={`rounded-full px-4 py-2 text-sm ${categoryId === '' ? 'bg-ink text-cream' : 'bg-cream'}`}
+            className={cn(
+              'shrink-0 rounded-full px-4 py-2 text-sm',
+              categoryId === '' ? 'bg-ink text-cream' : 'bg-cream text-ink hover:bg-paper-2',
+            )}
           >
             Todos
           </button>
@@ -73,7 +81,10 @@ export function CatalogPage() {
             <button
               key={category.id}
               onClick={() => setCategoryId(category.id)}
-              className={`rounded-full px-4 py-2 text-sm ${categoryId === category.id ? 'bg-ink text-cream' : 'bg-cream'}`}
+              className={cn(
+                'shrink-0 rounded-full px-4 py-2 text-sm',
+                categoryId === category.id ? 'bg-ink text-cream' : 'bg-cream text-ink hover:bg-paper-2',
+              )}
             >
               {category.name}
             </button>
@@ -82,45 +93,23 @@ export function CatalogPage() {
 
         <h2 className="mt-8 font-display text-3xl">Cortes disponibles</h2>
         {catalog.isLoading ? (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-72" />
+              <Skeleton key={i} className="h-[26rem]" />
             ))}
           </div>
         ) : products.length ? (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((product, index) => (
-              <article key={product.id} className="overflow-hidden rounded-3xl bg-cream">
-                <Link to={`/producto/${product.id}`}>
-                  <ProductMedia product={product} className="h-44 w-full" priority={index < 3} />
-                </Link>
-                <div className="space-y-4 p-5">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/60">{product.category?.name}</p>
-                    <h3 className="font-display text-2xl">{product.name}</h3>
-                    <PriceTag product={product} />
-                    {isVariableWeight(product) ? (
-                      <p className="mt-2 text-sm font-medium text-warn">Peso estimado: el importe final se calcula con el peso real al entregar.</p>
-                    ) : null}
-                  </div>
-                  <div className="flex gap-2">
-                    <Link to={`/producto/${product.id}`} className="flex-1">
-                      <Button variant="ghost" className="w-full bg-paper">
-                        Ver
-                      </Button>
-                    </Link>
-                    <Button
-                      className="flex-1"
-                      onClick={() => {
-                        add(product, product.saleUnit === 'KILOGRAM' ? 1 : 1);
-                        toast.success(`${product.name} agregado al pedido`);
-                      }}
-                    >
-                      Pedir
-                    </Button>
-                  </div>
-                </div>
-              </article>
+              <CatalogCard
+                key={product.id}
+                product={product}
+                priority={index < 3}
+                onOrder={() => {
+                  add(product, 1);
+                  toast.success(`${product.name} agregado al pedido`);
+                }}
+              />
             ))}
           </div>
         ) : (
@@ -133,5 +122,47 @@ export function CatalogPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function CatalogCard({
+  product,
+  priority,
+  onOrder,
+}: {
+  product: Product;
+  priority: boolean;
+  onOrder: () => void;
+}) {
+  const variable = isVariableWeight(product);
+
+  return (
+    <article className="flex h-full flex-col overflow-hidden rounded-3xl border border-gold/40 bg-cream shadow-card">
+      <Link to={`/producto/${product.id}`} className="block shrink-0">
+        <ProductMedia product={product} className="aspect-[4/3] w-full" priority={priority} />
+      </Link>
+      <div className="flex flex-1 flex-col p-5">
+        <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/60">{product.category?.name}</p>
+        <h3 className="mt-1 line-clamp-2 min-h-14 font-display text-2xl leading-tight">{product.name}</h3>
+        <PriceTag product={product} className="mt-3 min-h-24" />
+        {variable ? (
+          <p className="mt-3 inline-flex min-h-7 w-fit items-center rounded-full bg-gold/30 px-3 text-xs font-semibold text-ink">
+            Se pesa al entregar
+          </p>
+        ) : (
+          <div className="mt-3 min-h-7" aria-hidden />
+        )}
+        <div className="mt-auto flex gap-2 pt-5">
+          <Link to={`/producto/${product.id}`} className="flex-1">
+            <Button variant="ghost" className="w-full bg-paper">
+              Ver
+            </Button>
+          </Link>
+          <Button className="flex-1" onClick={onOrder}>
+            Pedir
+          </Button>
+        </div>
+      </div>
+    </article>
   );
 }

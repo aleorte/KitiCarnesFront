@@ -82,10 +82,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
         );
       },
       update(productId, quantity) {
+        const nextQuantity = Number.isFinite(quantity) && quantity >= 0 ? quantity : 0;
         persist(
-          quantity <= 0
-            ? items.filter((item) => item.productId !== productId)
-            : items.map((item) => (item.productId === productId ? { ...item, quantity } : item)),
+          items.map((item) =>
+            item.productId === productId ? { ...item, quantity: nextQuantity } : item,
+          ),
         );
       },
       remove(productId) {

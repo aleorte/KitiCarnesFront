@@ -61,6 +61,9 @@ export function CheckoutPage() {
       if (unavailable.length > 0) {
         throw new Error('Quitá los cortes que ya no están disponibles antes de confirmar.');
       }
+      if (items.some((item) => item.quantity <= 0)) {
+        throw new Error('Completá las cantidades de cada corte antes de confirmar.');
+      }
       return storeApi.checkout({
         firstName: values.firstName,
         lastName: values.lastName,
@@ -116,6 +119,7 @@ export function CheckoutPage() {
       ? mutation.error
       : null;
   const submitting = mutation.isPending;
+  const hasInvalidQuantities = items.some((item) => item.quantity <= 0);
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1fr_360px]">
@@ -165,7 +169,14 @@ export function CheckoutPage() {
         ) : mutation.isError ? (
           <p className="text-sm text-blood">{mutation.error?.message}</p>
         ) : null}
-        <Button type="submit" className="w-full" disabled={submitting || unavailable.length > 0}>
+        {hasInvalidQuantities ? (
+          <p className="text-sm text-blood">Completá las cantidades de cada corte antes de confirmar.</p>
+        ) : null}
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={submitting || unavailable.length > 0 || hasInvalidQuantities}
+        >
           {submitting ? 'Preparando tu pedido...' : 'Confirmar pedido'}
         </Button>
       </form>

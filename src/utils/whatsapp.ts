@@ -56,7 +56,7 @@ export function whatsappUrl(raw: string | null | undefined, text?: string): stri
   const number = toWhatsAppNumber(raw);
   if (!number) return null;
   if (!text) return `https://wa.me/${number}`;
-  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+  return `https://api.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(text)}`;
 }
 
 export function openWhatsApp(raw: string | null | undefined, text?: string) {

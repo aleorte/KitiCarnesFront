@@ -1,12 +1,14 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ProductMedia, QuantityLabel, WeightPriceNotice } from '../../components/commerce';
 import { Button, EmptyState, Input } from '../../components/ui';
-import { useCart } from '../../hooks/use-cart';
+import { useCart, type CartItem } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { estimatedLineTotals, formatMoney, formatMoneyRange } from '../../utils/format';
 
 export function CartPage() {
   const { items, update, remove, estimatedTotalMin, estimatedTotalMax, hasWeightItems } = useCart();
+  const hasInvalidQuantities = items.some((item) => item.quantity <= 0);
   const catalog = useStoreCatalog({ enabled: items.length > 0 });
   const availableIds = new Set((catalog.data?.products ?? []).map((product) => product.id));
   const unavailable = items.filter((item) => catalog.isSuccess && !availableIds.has(item.productId));
@@ -55,14 +57,10 @@ export function CartPage() {
                 )}
                 <WeightPriceNotice product={item} quantity={item.quantity} />
                 <div className="mt-3 flex items-center gap-3">
-                  <Input
-                    type="number"
-                    min={item.saleUnit === 'KILOGRAM' ? 0.1 : 1}
-                    step={item.saleUnit === 'KILOGRAM' ? 0.05 : 1}
-                    value={item.quantity}
+                  <CartQtyInput
+                    item={item}
                     disabled={inactive}
-                    onChange={(e) => update(item.productId, Number(e.target.value))}
-                    className="max-w-28 py-2"
+                    onChangeQty={(quantity) => update(item.productId, quantity)}
                   />
                   <QuantityLabel product={item} quantity={item.quantity} />
                 </div>
@@ -91,6 +89,10 @@ export function CartPage() {
           <Button className="mt-6 w-full" disabled>
             Quitá los cortes no disponibles
           </Button>
+        ) : hasInvalidQuantities ? (
+          <Button className="mt-6 w-full" disabled>
+            Completá las cantidades para continuar
+          </Button>
         ) : (
           <Link to="/checkout">
             <Button className="mt-6 w-full bg-blood">Continuar el pedido</Button>
@@ -98,5 +100,52 @@ export function CartPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function CartQtyInput({
+  item,
+  disabled,
+  onChangeQty,
+}: {
+  item: CartItem;
+  disabled?: boolean;
+  onChangeQty: (quantity: number) => void;
+}) {
+  const focusedRef = useRef(false);
+  const [text, setText] = useState(() => (item.quantity > 0 ? String(item.quantity) : ''));
+
+  useEffect(() => {
+    if (focusedRef.current) return;
+    setText(item.quantity > 0 ? String(item.quantity) : '');
+  }, [item.quantity]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      disabled={disabled}
+      value={text}
+      className="max-w-28 py-2"
+      aria-label={`Cantidad de ${item.name}`}
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        if (text.trim() === '') onChangeQty(0);
+      }}
+      onChange={(event) => {
+        const raw = event.target.value.replace(',', '.').trim();
+        if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return;
+        setText(event.target.value.replace(',', '.'));
+        if (raw === '' || raw === '.') {
+          onChangeQty(0);
+          return;
+        }
+        const next = Number(raw);
+        if (Number.isFinite(next) && next >= 0) onChangeQty(next);
+      }}
+    />
   );
 }

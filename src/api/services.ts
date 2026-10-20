@@ -46,7 +46,7 @@ export const storeApi = {
   checkout: (body: Record<string, unknown>) =>
     api.post<StoreCheckoutResponse>('/store/checkout', body, { auth: false }),
   track: (id: string, phone: string) =>
-    api.get<Order>(`/store/orders/${id}${toQuery({ phone })}`, { auth: false }),
+    api.get<Order>(`/store/orders/${encodeURIComponent(id)}${toQuery({ phone })}`, { auth: false }),
   contact: () => api.get<{ whatsappPhone: string | null }>('/store/contact', { auth: false }),
 };
 

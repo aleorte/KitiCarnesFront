@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Search, ShoppingBag } from 'lucide-react';
+import { ShoppingBag } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { storeApi } from '../api/services';
 import { BRAND_NAME, BRAND_TAGLINE } from '../brand';
@@ -8,12 +8,12 @@ import { WhatsAppIcon } from '../components/whatsapp-button';
 import { useCart } from '../hooks/use-cart';
 import { useStoreCatalog } from '../hooks/use-store-catalog';
 import { openWhatsApp } from '../utils/whatsapp';
+import { cn } from '../utils/format';
 
-const links = [
-  { to: '/', label: 'Mostrador' },
-  { to: '/seguimiento', label: 'Seguimiento' },
-  { to: '/admin/login', label: 'Equipo' },
-];
+const publicLinks = [
+  { to: '/', label: 'Mostrador', end: true },
+  { to: '/seguimiento', label: 'Seguimiento', end: false },
+] as const;
 
 export function StoreLayout() {
   const { items } = useCart();
@@ -29,16 +29,17 @@ export function StoreLayout() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <header className="sticky top-0 z-30 border-b border-gold/50 bg-paper/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3 md:gap-8">
-          <NavLink to="/" className="flex shrink-0 items-center gap-3 text-ink">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 md:gap-8">
+          <NavLink to="/" className="flex min-w-0 shrink-0 items-center gap-3 text-ink">
             <BrandLogo size="sm" />
             <span className="hidden font-display text-xl leading-none sm:inline">{BRAND_NAME}</span>
           </NavLink>
           <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
-            {links.map((link) => (
+            {publicLinks.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
+                end={link.end}
                 className={({ isActive }) =>
                   isActive ? 'text-blood' : 'text-ink-soft hover:text-blood'
                 }
@@ -47,11 +48,11 @@ export function StoreLayout() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <NavLink to="/seguimiento" className="rounded-full p-2 hover:bg-paper-2 md:hidden">
-              <Search className="h-5 w-5" />
-            </NavLink>
-            <NavLink to="/carrito" className="relative rounded-full bg-ink px-4 py-2 text-cream">
+          <div className="ml-auto shrink-0">
+            <NavLink
+              to="/carrito"
+              className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-ink px-4 py-2 text-cream"
+            >
               <ShoppingBag className="h-4 w-4" />
               {count > 0 ? (
                 <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-blood px-1 text-[11px] text-white">
@@ -61,6 +62,23 @@ export function StoreLayout() {
             </NavLink>
           </div>
         </div>
+        <nav className="grid grid-cols-2 border-t border-gold/40 md:hidden">
+          {publicLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.end}
+              className={({ isActive }) =>
+                cn(
+                  'flex min-h-12 items-center justify-center px-3 text-sm font-semibold',
+                  isActive ? 'bg-ink text-cream' : 'text-ink-soft',
+                )
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </nav>
       </header>
       <main>
         <Outlet />

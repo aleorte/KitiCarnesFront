@@ -7,6 +7,7 @@ import { Button, Field, Input, Skeleton } from '../../components/ui';
 import { WhatsAppIcon } from '../../components/whatsapp-button';
 import { ORDER_STATUS_LABEL, type OrderStatus, type StoreCheckoutConfirmation } from '../../types/api';
 import { formatDate, formatMoney, formatQty } from '../../utils/format';
+import { parseTrackingOrderCode } from '../../utils/tracking-order-code';
 
 const STEPS: OrderStatus[] = ['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'ENTREGADO'];
 const CHECKOUT_CONFIRMATION_KEY = 'kitikitikiti.checkoutConfirmation';
@@ -205,6 +206,7 @@ export function OrderTrackingPage({ confirmation = false }: { confirmation?: boo
 export function TrackSearchPage() {
   const [id, setId] = useState('');
   const [phone, setPhone] = useState('');
+  const [formatError, setFormatError] = useState<string | null>(null);
   const [lookup, setLookup] = useState<{ id: string; phone: string } | null>(null);
   const order = useQuery({
     queryKey: ['track-search', lookup],
@@ -215,32 +217,68 @@ export function TrackSearchPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
       <h1 className="font-display text-4xl">¿Dónde está tu pedido?</h1>
-      <p className="mt-2 text-ink-soft">Ingresá el número de pedido y el teléfono con el que lo hiciste.</p>
+      <p className="mt-2 text-ink-soft">
+        Ingresá el número de pedido (podés pegar el texto de WhatsApp) y el teléfono con el que lo hiciste.
+      </p>
       <form
         className="mt-6 space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          setLookup({ id, phone });
+          const code = parseTrackingOrderCode(id);
+          if (!code) {
+            setLookup(null);
+            setFormatError(
+              'No reconocimos el número de pedido. Pegá el texto de WhatsApp o el código, por ejemplo 8BC59911.',
+            );
+            return;
+          }
+          if (!phone.trim()) {
+            setLookup(null);
+            setFormatError('Ingresá el teléfono con el que hiciste el pedido.');
+            return;
+          }
+          setFormatError(null);
+          setLookup({ id: code, phone: phone.trim() });
         }}
       >
         <Field label="Número de pedido">
-          <Input value={id} onChange={(e) => setId(e.target.value)} />
+          <Input
+            value={id}
+            onChange={(e) => {
+              setId(e.target.value);
+              setFormatError(null);
+            }}
+            placeholder="Pedido: #8BC59911"
+            autoCapitalize="characters"
+          />
         </Field>
         <Field label="Teléfono">
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <Input
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setFormatError(null);
+            }}
+            placeholder="1144556677"
+            inputMode="tel"
+          />
         </Field>
-        <Button type="submit" className="w-full">
-          Consultar
+        {formatError ? <p className="text-sm text-blood">{formatError}</p> : null}
+        <Button type="submit" className="w-full" disabled={order.isFetching}>
+          {order.isFetching ? 'Consultando...' : 'Consultar'}
         </Button>
       </form>
-      {order.data ? (
+      {lookup && order.isFetching ? <Skeleton className="mt-6 h-36" /> : null}
+      {lookup && order.data && !order.isFetching ? (
         <div className="mt-6 rounded-3xl bg-cream p-5">
           <StatusBadge status={order.data.status} />
           <p className="mt-3 font-display text-2xl">{formatMoney(order.data.estimatedTotal)}</p>
           <p className="text-sm text-ink-soft">Pedido del {formatDate(order.data.orderedAt)}</p>
         </div>
       ) : null}
-      {order.isError ? <p className="mt-4 text-blood">{order.error.message}</p> : null}
+      {lookup && order.isError && !order.isFetching ? (
+        <p className="mt-4 text-blood">{order.error.message}</p>
+      ) : null}
     </div>
   );
 }

@@ -39,10 +39,18 @@ function persistConfirmation(orderId: string, confirmation: StoreCheckoutConfirm
   );
 }
 
+const CHECKOUT_FIELD_ORDER: Array<keyof FormValues> = [
+  'firstName',
+  'lastName',
+  'phone',
+  'address',
+];
+
 export function CheckoutPage() {
   const { items, estimatedTotalMin, estimatedTotalMax, hasWeightItems, clear } = useCart();
   const navigate = useNavigate();
   const form = useForm<FormValues>({ resolver: zodResolver(schema) });
+  const formRef = useRef<HTMLFormElement>(null);
   const whatsappTabRef = useRef<Window | null>(null);
   const submitLockRef = useRef(false);
   const catalog = useStoreCatalog({ enabled: items.length > 0 });
@@ -124,13 +132,23 @@ export function CheckoutPage() {
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1fr_360px]">
       <form
+        ref={formRef}
         className="space-y-4"
-        onSubmit={form.handleSubmit((values) => {
-          if (submitting || submitLockRef.current) return;
-          submitLockRef.current = true;
-          whatsappTabRef.current = window.open('about:blank', '_blank');
-          mutation.mutate(values);
-        })}
+        onSubmit={form.handleSubmit(
+          (values) => {
+            if (submitting || submitLockRef.current) return;
+            submitLockRef.current = true;
+            whatsappTabRef.current = window.open('about:blank', '_blank');
+            mutation.mutate(values);
+          },
+          (errors) => {
+            const first = CHECKOUT_FIELD_ORDER.find((field) => errors[field]);
+            formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (first) {
+              form.setFocus(first);
+            }
+          },
+        )}
       >
         <h1 className="font-display text-4xl">Confirmar pedido</h1>
         <p className="text-sm text-ink-soft">

@@ -6,7 +6,7 @@ import { StatusBadge } from '../../components/commerce';
 import { Button, Field, Input, Skeleton } from '../../components/ui';
 import { WhatsAppIcon } from '../../components/whatsapp-button';
 import { ORDER_STATUS_LABEL, type OrderStatus, type StoreCheckoutConfirmation } from '../../types/api';
-import { formatDate, formatMoney, formatQty } from '../../utils/format';
+import { formatDate, formatMoney, formatQty, orderPublicCode } from '../../utils/format';
 import { parseTrackingOrderCode } from '../../utils/tracking-order-code';
 
 const STEPS: OrderStatus[] = ['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'ENTREGADO'];
@@ -129,7 +129,7 @@ export function OrderTrackingPage({ confirmation = false }: { confirmation?: boo
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm text-ink-soft">Pedido</p>
-              <p className="font-mono text-sm">{order.data.id}</p>
+              <p className="font-mono text-sm">#{orderPublicCode(order.data)}</p>
             </div>
             <StatusBadge status={order.data.status} />
           </div>

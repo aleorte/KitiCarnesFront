@@ -4,10 +4,12 @@ import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { storeApi } from '../../api/services';
 import { PriceTag, ProductMedia, WeightPriceNotice } from '../../components/commerce';
-import { Button, Input, Skeleton } from '../../components/ui';
+import { QuantityDraftInput } from '../../components/quantity-draft-input';
+import { Button, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { formatMoney, formatMoneyRange, estimatedLineTotals, isVariableWeight } from '../../utils/format';
+import { isIntegerQuantity, parseQuantityDraft } from '../../utils/quantity-draft';
 
 export function ProductDetailPage() {
   const { id = '' } = useParams();
@@ -20,8 +22,11 @@ export function ProductDetailPage() {
     enabled: Boolean(id) && !cached && !catalog.isLoading,
     staleTime: 60_000,
   });
-  const [qty, setQty] = useState(1);
+  const [qtyText, setQtyText] = useState('1');
+  const [qtyError, setQtyError] = useState<string | null>(null);
   const item = cached ?? product.data;
+  const parsedQty = parseQuantityDraft(qtyText);
+  const displayQty = parsedQty ?? 0;
 
   if (catalog.isLoading || (!item && product.isLoading)) {
     return <div className="mx-auto max-w-6xl px-4 py-10"><Skeleton className="h-[480px]" /></div>;
@@ -29,7 +34,7 @@ export function ProductDetailPage() {
   if (!item) return <p className="p-10">El producto no está disponible.</p>;
   const isKg = item.saleUnit === 'KILOGRAM';
   const variable = isVariableWeight(item);
-  const range = estimatedLineTotals({ ...item, quantity: qty });
+  const range = estimatedLineTotals({ ...item, quantity: displayQty });
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-2">
@@ -44,9 +49,9 @@ export function ProductDetailPage() {
         <h1 className="font-display text-5xl">{item.name}</h1>
         <p className="mt-4 max-w-lg text-ink-soft/80">{item.description ?? 'Corte fresco, pesado al momento de preparar el pedido.'}</p>
         <div className="mt-6">
-          <PriceTag product={item} quantity={qty} />
+          <PriceTag product={item} quantity={displayQty || 1} />
         </div>
-        <WeightPriceNotice product={item} quantity={qty} />
+        <WeightPriceNotice product={item} quantity={displayQty || 1} />
         <div className="mt-8 rounded-3xl bg-cream p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft/70">
             {isKg ? 'Kilos a pedir' : 'Unidades'}
@@ -61,31 +66,37 @@ export function ProductDetailPage() {
               {[0.5, 1, 1.25, 2.5].map((preset) => (
                 <button
                   key={preset}
-                  onClick={() => setQty(preset)}
-                  className={`rounded-full px-3 py-2 text-sm ${qty === preset ? 'bg-ink text-cream' : 'bg-paper'}`}
+                  onClick={() => {
+                    setQtyText(String(preset));
+                    setQtyError(null);
+                  }}
+                  className={`rounded-full px-3 py-2 text-sm ${parsedQty === preset ? 'bg-ink text-cream' : 'bg-paper'}`}
                 >
                   {preset} kg
                 </button>
               ))}
-              <Input
-                type="number"
-                min="0.1"
-                step="0.05"
-                value={qty}
-                onChange={(e) => setQty(Number(e.target.value) || 0)}
+              <QuantityDraftInput
+                value={qtyText}
+                aria-label="Cantidad en kilos"
                 className="max-w-32"
+                onChange={(next) => {
+                  setQtyText(next);
+                  setQtyError(null);
+                }}
               />
             </div>
           ) : (
-            <Input
-              type="number"
-              min="1"
-              step="1"
-              value={qty}
-              onChange={(e) => setQty(Number(e.target.value) || 1)}
+            <QuantityDraftInput
+              value={qtyText}
+              aria-label="Cantidad en unidades"
               className="mt-3 max-w-32"
+              onChange={(next) => {
+                setQtyText(next);
+                setQtyError(null);
+              }}
             />
           )}
+          {qtyError ? <p className="mt-3 text-sm text-blood">{qtyError}</p> : null}
           <div className="mt-5 flex items-center justify-between">
             <span className="text-sm text-ink-soft">{variable ? 'Precio estimado' : 'Subtotal estimado'}</span>
             <span className="font-display text-3xl">{formatMoneyRange(range.min, range.max)}</span>
@@ -98,8 +109,17 @@ export function ProductDetailPage() {
           <Button
             className="mt-5 w-full"
             onClick={() => {
-              add(item, qty);
-              toast.success('Agregado al pedido');
+              const quantity = parseQuantityDraft(qtyText);
+              if (quantity == null) {
+                setQtyError('Ingresá una cantidad para agregar al pedido.');
+                return;
+              }
+              if (!isKg && !isIntegerQuantity(quantity)) {
+                setQtyError('Para este corte la cantidad tiene que ser un número entero.');
+                return;
+              }
+              add(item, quantity);
+              toast.success(`${item.name} × ${isKg ? `${quantity} kg` : `${quantity} u.`} agregado al pedido`);
             }}
           >
             Agregar al pedido

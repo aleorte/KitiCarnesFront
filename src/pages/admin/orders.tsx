@@ -31,7 +31,7 @@ import {
   type OrderStatus,
   type PaymentMethod,
 } from '../../types/api';
-import { formatDate, formatKgDelta, formatMoney, formatQty, needsWeighing, shortOrderId } from '../../utils/format';
+import { formatDate, formatKgDelta, formatMoney, formatQty, needsWeighing, orderPublicCode } from '../../utils/format';
 import {
   buildConfirmedOrderWhatsAppMessage,
   canMessageOrderOnWhatsApp,
@@ -202,7 +202,10 @@ export function OrdersPage() {
                         <p className="text-ink-soft">{order.customer?.address}</p>
                       </td>
                       <td className="px-4 py-3">{order.customer?.phone}</td>
-                      <td className="px-4 py-3">{formatDate(order.orderedAt)}</td>
+                      <td className="px-4 py-3">
+                        <p>#{orderPublicCode(order)}</p>
+                        <p className="text-ink-soft">{formatDate(order.orderedAt)}</p>
+                      </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} />
                         {primary ? (
@@ -237,7 +240,7 @@ export function OrdersPage() {
                       <p className="mt-1 text-sm text-ink-soft">{order.customer?.phone}</p>
                       <p className="text-sm text-ink-soft">{order.customer?.address}</p>
                       <p className="mt-2">
-                        {formatMoney(order.finalTotal ?? order.estimatedTotal)} · {formatDate(order.orderedAt)}
+                        #{orderPublicCode(order)} · {formatMoney(order.finalTotal ?? order.estimatedTotal)} · {formatDate(order.orderedAt)}
                       </p>
                     </Link>
                     <StatusBadge status={order.status} />
@@ -271,7 +274,7 @@ export function OrdersPage() {
         title="¿Eliminar pedido?"
         description={
           pendingDelete
-            ? `Estás por eliminar el pedido #${shortOrderId(pendingDelete.id)} de ${customerName(pendingDelete)}. Esta acción no se puede deshacer.`
+            ? `Estás por eliminar el pedido #${orderPublicCode(pendingDelete)} de ${customerName(pendingDelete)}. Esta acción no se puede deshacer.`
             : 'Esta acción no se puede deshacer.'
         }
         confirmLabel="Eliminar pedido"
@@ -341,7 +344,7 @@ function OrderEditDialog({
   return (
     <Modal
       open={Boolean(order)}
-      title={order ? `Editar pedido #${shortOrderId(order.id)}` : 'Editar pedido'}
+      title={order ? `Editar pedido #${orderPublicCode(order)}` : 'Editar pedido'}
       description={
         hasActualKg
           ? 'Este pedido ya tiene pesos reales. Solo se pueden editar las notas.'
@@ -703,7 +706,7 @@ export function OrderDetailPage() {
       <ConfirmDialog
         open={pendingDelete}
         title="¿Eliminar pedido?"
-        description={`Estás por eliminar el pedido #${shortOrderId(data.id)} de ${customerName(data)}. Esta acción no se puede deshacer.`}
+        description={`Estás por eliminar el pedido #${orderPublicCode(data)} de ${customerName(data)}. Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar pedido"
         danger
         loading={removeMutation.isPending}

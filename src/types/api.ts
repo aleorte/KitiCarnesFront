@@ -119,6 +119,7 @@ export type OrderItem = {
 
 export type Order = {
   id: string;
+  trackingCode?: string;
   status: OrderStatus;
   paymentStatus?: PaymentStatus;
   estimatedTotal: string;

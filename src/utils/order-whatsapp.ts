@@ -5,7 +5,7 @@ import {
   formatQty,
   isVariableWeight,
   needsWeighing,
-  shortOrderId,
+  orderPublicCode,
 } from './format';
 
 function itemLines(item: OrderItem): string[] {
@@ -58,7 +58,7 @@ export function buildConfirmedOrderWhatsAppMessage(order: Order): string {
     lines.push(...itemLines(item), '');
   }
 
-  lines.push(`Pedido #${shortOrderId(order.id)}`, '');
+  lines.push(`Pedido #${orderPublicCode(order)}`, '');
 
   const pendingWeight = order.items.some((item) => needsWeighing(item) && !item.actualKg);
 

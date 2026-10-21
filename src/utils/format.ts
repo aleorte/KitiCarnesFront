@@ -53,6 +53,10 @@ export function shortOrderId(id: string) {
   return id.slice(0, 8).toUpperCase();
 }
 
+export function orderPublicCode(order: { trackingCode?: string | null; id: string }) {
+  return (order.trackingCode ?? shortOrderId(order.id)).toUpperCase();
+}
+
 export function formatDate(value: string | Date) {
   const date =
     typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)

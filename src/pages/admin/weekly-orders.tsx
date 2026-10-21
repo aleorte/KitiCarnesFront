@@ -1021,7 +1021,7 @@ export function WeeklyOrdersPage() {
       <ConfirmDialog
         open={confirmingWeek}
         title="¿Confirmar todos los pedidos de esta semana?"
-        description={`Esta acción cambiará el estado de los ${data.summary.pending} pedido(s) pendientes de esta semana. No toca los cancelados, entregados ni los que ya avanzaron.`}
+        description={`Esta acción confirmará los ${data.summary.pending} pedido(s) en estado Pendiente de esta semana. No toca los que esperan WhatsApp, los cancelados, los entregados ni los que ya avanzaron.`}
         confirmLabel="Confirmar pedidos"
         loading={confirmWeek.isPending}
         onClose={() => setConfirmingWeek(false)}

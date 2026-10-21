@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ApiError } from '../../api/client';
 import { ordersApi, paymentsApi } from '../../api/services';
+import { CreateOrderDialog } from './create-order-dialog';
 import { StatusBadge } from '../../components/commerce';
 import {
   Button,
@@ -18,6 +19,7 @@ import {
   Textarea,
 } from '../../components/ui';
 import { WhatsAppButton } from '../../components/whatsapp-button';
+import { useAuth } from '../../hooks/use-auth';
 import {
   ORDER_FLOW,
   ORDER_STATUS_ACTIONS,
@@ -113,8 +115,11 @@ function OrderActions({ order, onEdit, onDelete }: OrderActionsProps) {
 export function OrdersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission('orders:manage');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Order | null>(null);
   const orders = useQuery({
@@ -162,7 +167,15 @@ export function OrdersPage() {
 
   return (
     <div>
-      <PageHeader title="Pedidos" description="Confirmá, prepará y entregá. El peso real se pide solo en cortes de peso variable." />
+      <PageHeader
+        title="Pedidos"
+        description="Confirmá, prepará y entregá. El peso real se pide solo en cortes de peso variable."
+        actions={
+          canManage ? (
+            <Button onClick={() => setCreating(true)}>Nuevo pedido</Button>
+          ) : null
+        }
+      />
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <Input placeholder="Cliente o teléfono" value={search} onChange={(e) => setSearch(e.target.value)} />
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -205,6 +218,9 @@ export function OrdersPage() {
                       <td className="px-4 py-3">
                         <p>#{orderPublicCode(order)}</p>
                         <p className="text-ink-soft">{formatDate(order.orderedAt)}</p>
+                        <p className="text-xs text-ink-soft">
+                          {order.sourceIp ? 'Mostrador web' : 'Cargado por el equipo'}
+                        </p>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} />
@@ -242,6 +258,9 @@ export function OrdersPage() {
                       <p className="mt-2">
                         #{orderPublicCode(order)} · {formatMoney(order.finalTotal ?? order.estimatedTotal)} · {formatDate(order.orderedAt)}
                       </p>
+                      <p className="text-xs text-ink-soft">
+                        {order.sourceIp ? 'Mostrador web' : 'Cargado por el equipo'}
+                      </p>
                     </Link>
                     <StatusBadge status={order.status} />
                   </div>
@@ -264,6 +283,15 @@ export function OrdersPage() {
         </>
       )}
 
+      <CreateOrderDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(orderId) => {
+          setCreating(false);
+          void queryClient.invalidateQueries({ queryKey: ['orders'] });
+          navigate(`/admin/pedidos/${orderId}`);
+        }}
+      />
       <OrderEditDialog
         order={editing}
         onClose={() => setEditing(null)}

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
@@ -13,6 +13,7 @@ import { useCart } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import type { StoreCheckoutConfirmation } from '../../types/api';
 import { estimatedLineTotals, formatMoneyRange, toDecimalString } from '../../utils/format';
+import { scrollStorePageToTop } from '../../utils/scroll-store-page';
 import { STORE_EXTRA_ORDER_WHATSAPP_MESSAGE, toWhatsAppNumber } from '../../utils/whatsapp';
 
 const CHECKOUT_CONFIRMATION_KEY = 'kitikitikiti.checkoutConfirmation';
@@ -39,18 +40,10 @@ function persistConfirmation(orderId: string, confirmation: StoreCheckoutConfirm
   );
 }
 
-const CHECKOUT_FIELD_ORDER: Array<keyof FormValues> = [
-  'firstName',
-  'lastName',
-  'phone',
-  'address',
-];
-
 export function CheckoutPage() {
   const { items, estimatedTotalMin, estimatedTotalMax, hasWeightItems, clear } = useCart();
   const navigate = useNavigate();
   const form = useForm<FormValues>({ resolver: zodResolver(schema) });
-  const formRef = useRef<HTMLFormElement>(null);
   const whatsappTabRef = useRef<Window | null>(null);
   const submitLockRef = useRef(false);
   const catalog = useStoreCatalog({ enabled: items.length > 0 });
@@ -114,6 +107,10 @@ export function CheckoutPage() {
     },
   });
 
+  useLayoutEffect(() => {
+    scrollStorePageToTop();
+  }, []);
+
   useEffect(() => {
     if (!items.length && !mutation.isPending && !mutation.isSuccess) {
       navigate('/carrito', { replace: true });
@@ -132,23 +129,13 @@ export function CheckoutPage() {
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-[1fr_360px]">
       <form
-        ref={formRef}
         className="space-y-4"
-        onSubmit={form.handleSubmit(
-          (values) => {
-            if (submitting || submitLockRef.current) return;
-            submitLockRef.current = true;
-            whatsappTabRef.current = window.open('about:blank', '_blank');
-            mutation.mutate(values);
-          },
-          (errors) => {
-            const first = CHECKOUT_FIELD_ORDER.find((field) => errors[field]);
-            formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            if (first) {
-              form.setFocus(first);
-            }
-          },
-        )}
+        onSubmit={form.handleSubmit((values) => {
+          if (submitting || submitLockRef.current) return;
+          submitLockRef.current = true;
+          whatsappTabRef.current = window.open('about:blank', '_blank');
+          mutation.mutate(values);
+        })}
       >
         <h1 className="font-display text-4xl">Confirmar pedido</h1>
         <p className="text-sm text-ink-soft">

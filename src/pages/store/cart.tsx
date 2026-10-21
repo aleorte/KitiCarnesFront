@@ -5,6 +5,7 @@ import { Button, EmptyState, Input } from '../../components/ui';
 import { useCart, type CartItem } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { estimatedLineTotals, formatMoney, formatMoneyRange } from '../../utils/format';
+import { scrollStorePageToTop } from '../../utils/scroll-store-page';
 
 export function CartPage() {
   const { items, update, remove, estimatedTotalMin, estimatedTotalMax, hasWeightItems } = useCart();
@@ -94,7 +95,7 @@ export function CartPage() {
             Completá las cantidades para continuar
           </Button>
         ) : (
-          <Link to="/checkout">
+          <Link to="/checkout" onClick={scrollStorePageToTop}>
             <Button className="mt-6 w-full bg-blood">Continuar el pedido</Button>
           </Link>
         )}

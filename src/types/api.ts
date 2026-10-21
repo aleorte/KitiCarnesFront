@@ -127,6 +127,8 @@ export type Order = {
   finalTotal?: string | null;
   notes?: string | null;
   orderedAt: string;
+  /** IP del mostrador público. Nulo en pedidos cargados por el equipo. */
+  sourceIp?: string | null;
   customer?: Customer;
   items: OrderItem[];
   payments?: Payment[];

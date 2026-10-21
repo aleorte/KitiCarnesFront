@@ -19,6 +19,7 @@ type CartContextValue = {
   update: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
   clear: () => void;
+  syncFromProducts: (products: Product[]) => void;
   estimatedTotalMin: number;
   estimatedTotalMax: number;
   estimatedTotal: number;
@@ -28,14 +29,48 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | null>(null);
 const CART_KEY = 'kitikitikiti.cart';
 
+function withoutEstimatedKg(item: CartItem): CartItem {
+  return { ...item, estimatedMinKg: null, estimatedMaxKg: null };
+}
+
 function readCart(): CartItem[] {
   const raw = localStorage.getItem(CART_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as CartItem[];
+    const items = JSON.parse(raw) as CartItem[];
+    return items.map((item) => (item.saleUnit === 'KILOGRAM' ? withoutEstimatedKg(item) : item));
   } catch {
     return [];
   }
+}
+
+function alignCartItem(item: CartItem, product?: Product): CartItem {
+  if (!product) {
+    return item.saleUnit === 'KILOGRAM' ? withoutEstimatedKg(item) : item;
+  }
+  return {
+    ...item,
+    name: product.name,
+    imageUrl: product.imageUrl,
+    saleUnit: product.saleUnit,
+    salePrice: product.salePrice,
+    estimatedMinKg: product.saleUnit === 'KILOGRAM' ? null : product.estimatedMinKg ?? null,
+    estimatedMaxKg: product.saleUnit === 'KILOGRAM' ? null : product.estimatedMaxKg ?? null,
+  };
+}
+
+function cartSnapshot(items: CartItem[]) {
+  return JSON.stringify(
+    items.map((item) => ({
+      productId: item.productId,
+      saleUnit: item.saleUnit,
+      salePrice: item.salePrice,
+      estimatedMinKg: item.estimatedMinKg ?? null,
+      estimatedMaxKg: item.estimatedMaxKg ?? null,
+      quantity: item.quantity,
+      name: item.name,
+    })),
+  );
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
@@ -74,8 +109,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
                   imageUrl: product.imageUrl,
                   saleUnit: product.saleUnit,
                   salePrice: product.salePrice,
-                  estimatedMinKg: product.estimatedMinKg,
-                  estimatedMaxKg: product.estimatedMaxKg,
+                  estimatedMinKg:
+                    product.saleUnit === 'KILOGRAM' ? null : product.estimatedMinKg,
+                  estimatedMaxKg:
+                    product.saleUnit === 'KILOGRAM' ? null : product.estimatedMaxKg,
                   quantity,
                 },
               ],
@@ -94,6 +131,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       },
       clear() {
         persist([]);
+      },
+      syncFromProducts(products) {
+        const byId = new Map(products.map((product) => [product.id, product]));
+        const next = items.map((item) => alignCartItem(item, byId.get(item.productId)));
+        if (cartSnapshot(next) !== cartSnapshot(items)) {
+          persist(next);
+        }
       },
     };
   }, [items]);

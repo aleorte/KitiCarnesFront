@@ -42,18 +42,18 @@ export function trackingNextStep(status: OrderStatus): string {
 }
 
 export function trackingItemDetail(item: Order['items'][number]): string {
-  if (item.saleUnit === 'KILOGRAM' || item.estimatedMinKg) {
-    if (item.estimatedMinKg) {
-      const real = item.actualKg
-        ? ` · Real: ${formatQty(item.actualKg, 'KILOGRAM')}`
-        : ' · Peso real: pendiente';
-      return `${item.quantity} u. · estimado ${item.estimatedMinKg}–${item.estimatedMaxKg} kg${real}`;
-    }
+  if (item.saleUnit === 'KILOGRAM') {
     const requested = formatQty(item.requestedKg ?? item.quantity, 'KILOGRAM');
     const real = item.actualKg
       ? ` · Real: ${formatQty(item.actualKg, 'KILOGRAM')}`
       : ' · Peso real: pendiente';
     return `Solicitado: ${requested}${real}`;
+  }
+  if (item.estimatedMinKg && item.estimatedMaxKg) {
+    const real = item.actualKg
+      ? ` · Real: ${formatQty(item.actualKg, 'KILOGRAM')}`
+      : ' · Peso real: pendiente';
+    return `${item.quantity} u. · estimado ${item.estimatedMinKg}–${item.estimatedMaxKg} kg${real}`;
   }
   return formatQty(item.quantity, 'UNIT');
 }

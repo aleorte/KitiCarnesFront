@@ -4,7 +4,7 @@ import { ProductMedia, QuantityLabel, WeightPriceNotice } from '../../components
 import { Button, EmptyState, Input } from '../../components/ui';
 import { useCart, type CartItem } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
-import { estimatedLineTotals, formatMoney, formatMoneyRange } from '../../utils/format';
+import { estimatedLineTotals, formatMoney, formatMoneyRange, isVariableWeight } from '../../utils/format';
 import { scrollStorePageToTop } from '../../utils/scroll-store-page';
 
 export function CartPage() {
@@ -53,7 +53,7 @@ export function CartPage() {
                   <p className="text-sm font-medium text-blood">Este corte ya no se ofrece.</p>
                 ) : (
                   <p className="text-sm text-ink-soft">
-                    {formatMoney(item.salePrice)} {item.saleUnit === 'KILOGRAM' || item.estimatedMinKg ? '/ kg' : '/ u.'}
+                    {formatMoney(item.salePrice)} {item.saleUnit === 'KILOGRAM' || isVariableWeight(item) ? '/ kg' : '/ u.'}
                   </p>
                 )}
                 <WeightPriceNotice product={item} quantity={item.quantity} />

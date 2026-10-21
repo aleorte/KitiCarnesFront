@@ -90,9 +90,13 @@ export function dateOnly(date = new Date()) {
 }
 
 export function isVariableWeight(item: {
+  saleUnit?: 'UNIT' | 'KILOGRAM';
   estimatedMinKg?: string | number | null;
   estimatedMaxKg?: string | number | null;
 }) {
+  if (item.saleUnit === 'KILOGRAM') {
+    return false;
+  }
   if (item.estimatedMinKg == null || item.estimatedMaxKg == null || item.estimatedMinKg === '' || item.estimatedMaxKg === '') {
     return false;
   }

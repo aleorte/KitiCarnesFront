@@ -21,7 +21,7 @@ import {
   type Product,
   type StockMovementType,
 } from '../../types/api';
-import { formatDateTime, formatMoney, formatQty } from '../../utils/format';
+import { formatDateTime, formatMoney, formatQty, isVariableWeight } from '../../utils/format';
 
 function catalogStatus(product: Product) {
   if (product.deletedAt) return 'archived' as const;
@@ -144,7 +144,9 @@ export function StockPage() {
                     <td className="px-5 py-3">
                       {formatQty(
                         product.stock,
-                        product.saleUnit === 'KILOGRAM' || product.estimatedMinKg ? 'KILOGRAM' : product.saleUnit,
+                        product.saleUnit === 'KILOGRAM' || isVariableWeight(product)
+                          ? 'KILOGRAM'
+                          : product.saleUnit,
                       )}
                     </td>
                     <td className="px-5 py-3">{formatMoney(Number(product.stock) * Number(product.salePrice))}</td>

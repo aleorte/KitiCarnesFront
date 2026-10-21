@@ -9,7 +9,7 @@ import {
   type PaymentMethod,
   type PaymentStatus,
 } from '../../types/api';
-import { formatDateTime, formatMoney, formatQty, toDecimalString } from '../../utils/format';
+import { formatDateTime, formatMoney, formatQty, isVariableWeight, toDecimalString } from '../../utils/format';
 
 function billedQty(unit: string, quantity: string, kg?: string | null) {
   if (unit === 'KILOGRAM' || kg) return Number(kg ?? quantity);
@@ -51,7 +51,7 @@ export function SalesPage() {
     () => products.data?.data.find((product) => product.id === productId),
     [productId, products.data],
   );
-  const variable = Boolean(selected?.estimatedMinKg && selected?.estimatedMaxKg);
+  const variable = selected ? isVariableWeight(selected) : false;
   const byKg = selected?.saleUnit === 'KILOGRAM' || variable;
   const billed = byKg ? Number(variable ? kg || qty : qty) : Number(qty);
   const saleTotal = selected ? billed * Number(selected.salePrice) : 0;

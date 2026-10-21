@@ -106,8 +106,8 @@ export function CreateOrderDialog({
           name: selected.name,
           saleUnit: selected.saleUnit,
           salePrice: selected.salePrice,
-          estimatedMinKg: selected.estimatedMinKg,
-          estimatedMaxKg: selected.estimatedMaxKg,
+          estimatedMinKg: selected.saleUnit === 'KILOGRAM' ? null : selected.estimatedMinKg,
+          estimatedMaxKg: selected.saleUnit === 'KILOGRAM' ? null : selected.estimatedMaxKg,
           quantity: String(quantity),
         },
       ];

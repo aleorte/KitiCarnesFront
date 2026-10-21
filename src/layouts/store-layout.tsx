@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { ShoppingBag } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -16,14 +17,18 @@ const publicLinks = [
 ] as const;
 
 export function StoreLayout() {
-  const { items } = useCart();
+  const { items, syncFromProducts } = useCart();
   const count = items.length;
   const contact = useQuery({
     queryKey: ['store-contact'],
     queryFn: storeApi.contact,
     staleTime: 5 * 60 * 1000,
   });
-  useStoreCatalog();
+  const catalog = useStoreCatalog();
+  useEffect(() => {
+    if (!catalog.data?.products?.length) return;
+    syncFromProducts(catalog.data.products);
+  }, [catalog.data, syncFromProducts]);
   const shopWhatsApp = contact.data?.whatsappPhone;
 
   return (

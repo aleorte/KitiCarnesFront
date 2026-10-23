@@ -82,6 +82,8 @@ export const stockApi = {
   overview: () => api.get<StockOverview>('/stock/overview'),
   movements: (params: Record<string, string | number | undefined> = {}) =>
     api.get<Paginated<StockMovement>>(`/stock/movements${toQuery(params)}`),
+  add: (productId: string, quantity: string, reason?: string) =>
+    api.post<Product>(`/stock/${productId}/add`, { quantity, reason }),
   adjust: (productId: string, quantityDelta: string, reason?: string) =>
     api.post<Product>(`/stock/${productId}/adjust`, { quantityDelta, reason }),
   clear: (productId: string) => api.post<Product>(`/stock/${productId}/clear`, {}),

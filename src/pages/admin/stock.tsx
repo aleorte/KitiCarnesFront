@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { productsApi, stockApi } from '../../api/services';
 import {
-  Badge,
   Button,
   ConfirmDialog,
+  EmptyState,
   Field,
   Input,
   Modal,
@@ -15,18 +15,25 @@ import {
   Textarea,
 } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
-import {
-  PRODUCT_STATUS_LABEL,
-  STOCK_MOVEMENT_LABEL,
-  type Product,
-  type StockMovementType,
-} from '../../types/api';
+import { type Product, type StockMovementType, STOCK_MOVEMENT_LABEL } from '../../types/api';
 import { formatDateTime, formatMoney, formatQty, isVariableWeight } from '../../utils/format';
 
-function catalogStatus(product: Product) {
-  if (product.deletedAt) return 'archived' as const;
-  if (!product.isActive) return 'inactive' as const;
-  return 'active' as const;
+function stockUnit(product: Pick<Product, 'saleUnit' | 'estimatedMinKg' | 'estimatedMaxKg'>) {
+  return product.saleUnit === 'KILOGRAM' || isVariableWeight(product) ? 'KILOGRAM' : 'UNIT';
+}
+
+function parseQuantity(raw: string) {
+  const value = Number(raw.trim().replace(',', '.'));
+  return Number.isFinite(value) ? value : NaN;
+}
+
+function quantityError(raw: string, unit: 'UNIT' | 'KILOGRAM') {
+  if (!raw.trim()) return 'Ingresá la cantidad';
+  const value = parseQuantity(raw);
+  if (!Number.isFinite(value)) return 'Ingresá un número válido';
+  if (value <= 0) return 'La cantidad debe ser mayor a cero';
+  if (unit === 'UNIT' && !Number.isInteger(value)) return 'Para este corte la cantidad tiene que ser un número entero';
+  return null;
 }
 
 export function StockPage() {
@@ -35,10 +42,13 @@ export function StockPage() {
   const canAdjust = hasPermission('stock:adjust');
   const [search, setSearch] = useState('');
   const [type, setType] = useState<StockMovementType | ''>('');
+  const [adding, setAdding] = useState<Product | null | 'pick'>(null);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [quantity, setQuantity] = useState('');
   const [adjusting, setAdjusting] = useState<Product | null>(null);
-  const [clearing, setClearing] = useState<Product | null>(null);
   const [delta, setDelta] = useState('');
   const [reason, setReason] = useState('');
+  const [clearing, setClearing] = useState<Product | null>(null);
 
   const overview = useQuery({ queryKey: ['stock-overview'], queryFn: stockApi.overview });
   const products = useQuery({
@@ -46,36 +56,51 @@ export function StockPage() {
     queryFn: () =>
       productsApi.list({
         limit: 100,
-        status: 'all',
+        status: 'catalog',
+        hasStock: true,
         search: search || undefined,
       }),
+  });
+  const restockCandidates = useQuery({
+    queryKey: ['stock-restock-candidates', pickerSearch],
+    queryFn: () =>
+      productsApi.list({
+        limit: 40,
+        status: 'catalog',
+        hasStock: false,
+        search: pickerSearch || undefined,
+      }),
+    enabled: adding === 'pick',
   });
   const movements = useQuery({
     queryKey: ['stock-movements', type],
     queryFn: () => stockApi.movements({ limit: 40, type: type || undefined }),
   });
 
-  const clear = useMutation({
-    mutationFn: (id: string) => stockApi.clear(id),
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['stock-overview'] });
+    void queryClient.invalidateQueries({ queryKey: ['stock-products'] });
+    void queryClient.invalidateQueries({ queryKey: ['stock-restock-candidates'] });
+    void queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+  };
+
+  const add = useMutation({
+    mutationFn: ({ product, amount }: { product: Product; amount: string }) =>
+      stockApi.add(product.id, amount.replace(',', '.')),
     onSuccess: (product) => {
-      toast.success(`Stock de ${product.name} eliminado. El historial se conservó.`);
-      void queryClient.invalidateQueries({ queryKey: ['stock-overview'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-products'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
-      void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
-      setClearing(null);
+      toast.success(`${product.name}: ${formatQty(product.stock, stockUnit(product))}`);
+      refresh();
+      closeAdd();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
   const adjust = useMutation({
-    mutationFn: () => stockApi.adjust(adjusting!.id, delta, reason || undefined),
+    mutationFn: () => stockApi.adjust(adjusting!.id, delta.replace(',', '.'), reason || undefined),
     onSuccess: () => {
-      toast.success('Movimiento de stock registrado');
-      void queryClient.invalidateQueries({ queryKey: ['stock-overview'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-products'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
-      void queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+      toast.success('Ajuste de stock registrado');
+      refresh();
       setAdjusting(null);
       setDelta('');
       setReason('');
@@ -83,142 +108,144 @@ export function StockPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const summary = overview.data;
+  const clear = useMutation({
+    mutationFn: (id: string) => stockApi.clear(id),
+    onSuccess: (product) => {
+      toast.success(`Stock de ${product.name} en 0. El producto sigue existiendo.`);
+      refresh();
+      setClearing(null);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const selected = adding === 'pick' ? null : adding;
+  const addUnit = selected ? stockUnit(selected) : 'KILOGRAM';
+  const addError = selected ? quantityError(quantity, addUnit) : null;
+  const items = products.data?.data ?? [];
+  const candidates = useMemo(
+    () => restockCandidates.data?.data ?? [],
+    [restockCandidates.data],
+  );
+
+  const closeAdd = () => {
+    setAdding(null);
+    setPickerSearch('');
+    setQuantity('');
+  };
+
+  const openAddExisting = (product: Product) => {
+    setAdding(product);
+    setQuantity('');
+  };
 
   return (
     <div>
       <PageHeader
         title="Stock"
-        description="Cantidad disponible actualmente. No hay stock mínimo: el mínimo de compra vive en cada proveedor."
+        description="Solo se listan cortes con cantidad disponible. Si un producto está en 0, sigue existiendo: agrégalo de nuevo cuando entre mercadería."
+        actions={
+          canAdjust ? (
+            <Button className="min-h-12 w-full sm:w-auto" onClick={() => setAdding('pick')}>
+              + Agregar al stock
+            </Button>
+          ) : null
+        }
       />
-      {overview.isLoading || !summary ? (
-        <Skeleton className="h-28" />
+
+      {overview.isLoading || !overview.data ? (
+        <Skeleton className="h-24" />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-3xl bg-cream p-5">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Productos</p>
-            <p className="mt-2 font-display text-3xl">{summary.products}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-3xl bg-cream p-4">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-soft/70">Con stock</p>
+            <p className="mt-1 font-display text-3xl">{overview.data.products}</p>
           </div>
-          <div className="rounded-3xl bg-ink p-5 text-cream">
-            <p className="text-xs uppercase tracking-[0.16em] text-gold">Valor estimado</p>
-            <p className="mt-2 font-display text-3xl">{formatMoney(summary.estimatedValue)}</p>
-            <p className="mt-1 text-xs text-cream/70">Stock × precio de venta actual</p>
+          <div className="rounded-3xl bg-ink p-4 text-cream">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-gold">Valor</p>
+            <p className="mt-1 font-display text-2xl leading-none sm:text-3xl">
+              {formatMoney(overview.data.estimatedValue)}
+            </p>
           </div>
         </div>
       )}
 
-      <div className="mt-6">
-        <Field label="Buscar producto">
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Asado, vacío..." />
+      <div className="mt-5">
+        <Field label="Buscar">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Asado, vacío..."
+            className="min-h-12"
+          />
         </Field>
       </div>
 
       {products.isLoading ? (
         <Skeleton className="mt-4 h-72" />
-      ) : (
-        <div className="mt-4 hidden overflow-hidden rounded-3xl bg-cream md:block">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.16em] text-ink-soft">
-              <tr>
-                <th className="px-5 py-3 font-medium">Producto</th>
-                <th className="px-5 py-3 font-medium">Stock</th>
-                <th className="px-5 py-3 font-medium">Valor</th>
-                <th className="px-5 py-3 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {(products.data?.data ?? []).map((product) => {
-                const status = catalogStatus(product);
-                return (
-                  <tr key={product.id} className="border-t border-line">
-                    <td className="px-5 py-3 font-semibold">
-                      {product.name}
-                      {status !== 'active' ? (
-                        <span className="ml-2 inline-block">
-                          <Badge tone={status === 'inactive' ? 'warn' : 'danger'}>
-                            {PRODUCT_STATUS_LABEL[status]}
-                          </Badge>
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-5 py-3">
-                      {formatQty(
-                        product.stock,
-                        product.saleUnit === 'KILOGRAM' || isVariableWeight(product)
-                          ? 'KILOGRAM'
-                          : product.saleUnit,
-                      )}
-                    </td>
-                    <td className="px-5 py-3">{formatMoney(Number(product.stock) * Number(product.salePrice))}</td>
-                    <td className="px-5 py-3 text-right">
-                      {canAdjust ? (
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setAdjusting(product);
-                              setDelta('');
-                              setReason('');
-                            }}
-                          >
-                            Ajustar
-                          </Button>
-                          <Button
-                            variant="danger"
-                            disabled={Number(product.stock) <= 0}
-                            onClick={() => setClearing(product)}
-                          >
-                            Eliminar
-                          </Button>
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className="mt-4 grid gap-3 md:hidden">
-        {(products.data?.data ?? []).map((product) => {
-          const status = catalogStatus(product);
-          return (
-            <article key={product.id} className="rounded-3xl bg-cream p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold">{product.name}</p>
-                  <p className="text-sm text-ink-soft">{formatQty(product.stock, product.saleUnit)}</p>
-                  {status !== 'active' ? (
-                    <Badge tone={status === 'inactive' ? 'warn' : 'danger'}>{PRODUCT_STATUS_LABEL[status]}</Badge>
-                  ) : null}
+      ) : items.length ? (
+        <div className="mt-4 space-y-3">
+          {items.map((product) => {
+            const unit = stockUnit(product);
+            return (
+              <article key={product.id} className="rounded-3xl bg-cream p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="min-w-0 font-display text-2xl leading-tight">{product.name}</h2>
+                  <p className="shrink-0 font-display text-2xl">{formatQty(product.stock, unit)}</p>
                 </div>
                 {canAdjust ? (
-                  <div className="flex shrink-0 flex-col gap-2">
-                    <Button variant="secondary" onClick={() => setAdjusting(product)}>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <Button className="min-h-12 px-2 text-xs sm:text-sm" onClick={() => openAddExisting(product)}>
+                      Agregar
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="min-h-12 px-2 text-xs sm:text-sm"
+                      onClick={() => {
+                        setAdjusting(product);
+                        setDelta('');
+                        setReason('');
+                      }}
+                    >
                       Ajustar
                     </Button>
                     <Button
                       variant="danger"
-                      disabled={Number(product.stock) <= 0}
+                      className="min-h-12 px-2 text-xs sm:text-sm"
                       onClick={() => setClearing(product)}
                     >
                       Eliminar
                     </Button>
                   </div>
                 ) : null}
-              </div>
-            </article>
-          );
-        })}
-      </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <EmptyState
+            title="No hay stock disponible"
+            description="Los productos con cantidad 0 no se muestran acá. Siguen en el catálogo: buscalos con Agregar al stock."
+            action={
+              canAdjust ? (
+                <Button className="min-h-12" onClick={() => setAdding('pick')}>
+                  + Agregar al stock
+                </Button>
+              ) : null
+            }
+          />
+        </div>
+      )}
 
       <section className="mt-8">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <h2 className="font-display text-2xl">Movimientos</h2>
           <Field label="Tipo">
-            <Select value={type} onChange={(event) => setType(event.target.value as StockMovementType | '')}>
+            <Select
+              className="min-h-12"
+              value={type}
+              onChange={(event) => setType(event.target.value as StockMovementType | '')}
+            >
               <option value="">Todos</option>
               {Object.entries(STOCK_MOVEMENT_LABEL).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -235,8 +262,8 @@ export function StockPage() {
             {(movements.data?.data ?? []).map((movement) => (
               <li key={movement.id} className="rounded-3xl bg-cream px-4 py-3 text-sm">
                 <div className="flex justify-between gap-3">
-                  <span>
-                    <strong>{movement.product?.name ?? 'Producto'}</strong>
+                  <span className="min-w-0">
+                    <strong className="block truncate">{movement.product?.name ?? 'Producto'}</strong>
                     <span className="block text-ink-soft">
                       {STOCK_MOVEMENT_LABEL[movement.type]} · {formatDateTime(movement.createdAt)}
                     </span>
@@ -253,15 +280,120 @@ export function StockPage() {
         )}
       </section>
 
+      <Modal
+        open={adding !== null}
+        title={selected ? `Agregar a ${selected.name}` : 'Agregar al stock'}
+        description={
+          selected
+            ? `Stock actual: ${formatQty(selected.stock, stockUnit(selected))}. La cantidad se suma, no se reemplaza.`
+            : 'Elegí un producto que hoy está en 0. No se crea un corte nuevo.'
+        }
+        onClose={closeAdd}
+      >
+        {selected ? (
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (addError) return;
+              add.mutate({ product: selected, amount: quantity });
+            }}
+          >
+            <Field
+              label={addUnit === 'KILOGRAM' ? 'Kilos a agregar' : 'Unidades a agregar'}
+              error={quantity.trim() ? addError ?? undefined : undefined}
+            >
+              <Input
+                className="min-h-12"
+                inputMode={addUnit === 'KILOGRAM' ? 'decimal' : 'numeric'}
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+                placeholder={addUnit === 'KILOGRAM' ? 'Ej: 5' : 'Ej: 2'}
+                autoFocus
+              />
+            </Field>
+            <Button type="submit" className="min-h-12 w-full" disabled={Boolean(addError) || add.isPending}>
+              {add.isPending ? 'Guardando...' : 'Agregar stock'}
+            </Button>
+          </form>
+        ) : (
+          <div className="space-y-3">
+            <Field label="Buscar producto">
+              <Input
+                className="min-h-12"
+                value={pickerSearch}
+                onChange={(event) => setPickerSearch(event.target.value)}
+                placeholder="Asado, vacío, matambre..."
+                autoFocus
+              />
+            </Field>
+            {restockCandidates.isLoading ? (
+              <Skeleton className="h-40" />
+            ) : candidates.length ? (
+              <ul className="max-h-72 space-y-2 overflow-y-auto">
+                {candidates.map((product) => (
+                  <li key={product.id}>
+                    <button
+                      type="button"
+                      className="flex min-h-12 w-full items-center justify-between rounded-2xl bg-paper px-4 py-3 text-left"
+                      onClick={() => openAddExisting(product)}
+                    >
+                      <span className="font-semibold">{product.name}</span>
+                      <span className="text-sm text-ink-soft">{formatQty(product.stock, stockUnit(product))}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-ink-soft">
+                {pickerSearch
+                  ? 'No hay productos en 0 con ese nombre.'
+                  : 'Todos los cortes del catálogo ya tienen stock, o no hay productos cargados.'}
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(adjusting)}
+        title={adjusting ? `Ajustar ${adjusting.name}` : 'Ajustar'}
+        description="Para sumar mercadería usá Agregar. El ajuste es para corregir (positivo o negativo)."
+        onClose={() => setAdjusting(null)}
+      >
+        <div className="space-y-3">
+          <Field label="Cantidad (+ entrada / − salida)">
+            <Input
+              className="min-h-12"
+              inputMode="decimal"
+              value={delta}
+              onChange={(event) => setDelta(event.target.value)}
+              placeholder="Ej: -1.5"
+            />
+          </Field>
+          <Field label="Motivo">
+            <Textarea
+              rows={3}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Merma, conteo, devolución..."
+            />
+          </Field>
+          <Button className="min-h-12 w-full" disabled={!delta || adjust.isPending} onClick={() => adjust.mutate()}>
+            {adjust.isPending ? 'Guardando...' : 'Registrar ajuste'}
+          </Button>
+        </div>
+      </Modal>
+
       <ConfirmDialog
         open={Boolean(clearing)}
-        title="Eliminar registro de stock"
+        title="Dejar stock en 0"
         description={
           clearing
-            ? `¿Estás seguro de que querés eliminar este registro de stock? Esta acción afectará únicamente el stock disponible de ${clearing.name} (${formatQty(clearing.stock, clearing.saleUnit)}). Compras, ventas y movimientos históricos se conservan.`
-            : '¿Estás seguro de que querés eliminar este registro de stock? Esta acción afectará únicamente este registro.'
+            ? `${clearing.name} va a quedar en 0 ${stockUnit(clearing) === 'KILOGRAM' ? 'kg' : 'u.'}. El producto no se borra: podés volver a agregarlo cuando entre mercadería.`
+            : 'El producto queda en 0 y sigue existiendo.'
         }
-        confirmLabel="Eliminar"
+        confirmLabel="Dejar en 0"
         danger
         loading={clear.isPending}
         onConfirm={() => {
@@ -269,23 +401,6 @@ export function StockPage() {
         }}
         onClose={() => setClearing(null)}
       />
-
-      <Modal open={Boolean(adjusting)} title={adjusting ? `Ajustar ${adjusting.name}` : 'Ajustar'} onClose={() => setAdjusting(null)}>
-        <div className="space-y-3">
-          <p className="text-sm text-ink-soft">
-            Usá un número positivo para entrada y negativo para salida. Queda un movimiento con fecha, usuario y motivo.
-          </p>
-          <Field label="Cantidad (+ entrada / − salida)">
-            <Input value={delta} onChange={(event) => setDelta(event.target.value)} placeholder="Ej: -1.500" />
-          </Field>
-          <Field label="Motivo">
-            <Textarea rows={3} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Merma, conteo, devolución..." />
-          </Field>
-          <Button className="w-full" disabled={!delta || adjust.isPending} onClick={() => adjust.mutate()}>
-            {adjust.isPending ? 'Guardando...' : 'Registrar movimiento'}
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }

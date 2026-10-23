@@ -251,6 +251,58 @@ export type UserAccount = {
   isActive: boolean;
 };
 
+export type ExpenseReimbursementStatus = 'PENDIENTE' | 'PARCIAL' | 'REINTEGRADO';
+
+export type ExpenseMember = Pick<
+  UserAccount,
+  'id' | 'firstName' | 'lastName' | 'email' | 'role' | 'isActive'
+>;
+
+export type ExpenseReimbursement = {
+  id: string;
+  amount: string;
+  reimbursedAt: string;
+  notes?: string | null;
+  recordedBy?: Pick<UserAccount, 'id' | 'firstName' | 'lastName' | 'email'>;
+  createdAt: string;
+};
+
+export type Expense = {
+  id: string;
+  memberId: string;
+  member: ExpenseMember;
+  description: string;
+  amount: string;
+  incurredAt: string;
+  reimbursedTotal: string;
+  pendingBalance: string;
+  status: ExpenseReimbursementStatus;
+  reimbursements: ExpenseReimbursement[];
+  recordedBy?: Pick<UserAccount, 'id' | 'firstName' | 'lastName' | 'email'>;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ExpenseMemberSummary = {
+  member: ExpenseMember;
+  spentTotal: string;
+  reimbursedTotal: string;
+  pendingBalance: string;
+};
+
+export type ExpenseSummary = {
+  spentTotal: string;
+  reimbursedTotal: string;
+  pendingBalance: string;
+  members: ExpenseMemberSummary[];
+};
+
+export const EXPENSE_STATUS_LABEL: Record<ExpenseReimbursementStatus, string> = {
+  PENDIENTE: 'Pendiente',
+  PARCIAL: 'Parcialmente reintegrado',
+  REINTEGRADO: 'Reintegrado',
+};
+
 export type DashboardOverview = {
   timezone: string;
   sales: {

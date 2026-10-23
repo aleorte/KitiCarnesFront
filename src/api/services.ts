@@ -26,6 +26,8 @@ import type {
   SupplierProduct,
   SupplierRemoveResult,
   UserAccount,
+  Expense,
+  ExpenseSummary,
   WeeklyOrders,
   WeeklyProductSources,
   WholesaleOrder,
@@ -183,6 +185,22 @@ export const purchasesApi = {
     api.get<Paginated<Purchase>>(`/purchases${toQuery(params)}`),
   one: (id: string) => api.get<Purchase>(`/purchases/${id}`),
   create: (body: Record<string, unknown>) => api.post<Purchase>('/purchases', body),
+};
+
+export const expensesApi = {
+  list: (params: Record<string, string | number | undefined> = {}) =>
+    api.get<Paginated<Expense>>(`/expenses${toQuery(params)}`),
+  summary: (memberId?: string) =>
+    api.get<ExpenseSummary>(`/expenses/summary${toQuery({ memberId })}`),
+  one: (id: string) => api.get<Expense>(`/expenses/${id}`),
+  create: (body: Record<string, unknown>) => api.post<Expense>('/expenses', body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<Expense>(`/expenses/${id}`, body),
+  remove: (id: string) => api.delete<{ id: string; strategy: 'deleted' }>(`/expenses/${id}`),
+  reimburse: (id: string, body: Record<string, unknown>) =>
+    api.post<Expense>(`/expenses/${id}/reimbursements`, body),
+  removeReimbursement: (id: string, reimbursementId: string) =>
+    api.delete<Expense>(`/expenses/${id}/reimbursements/${reimbursementId}`),
 };
 
 export const usersApi = {

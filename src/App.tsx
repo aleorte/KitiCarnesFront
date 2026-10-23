@@ -8,6 +8,7 @@ import { AdminLayout } from './layouts/admin-layout';
 import { StoreLayout } from './layouts/store-layout';
 import { CustomerDetailPage, CustomersPage } from './pages/admin/customers';
 import { DashboardPage } from './pages/admin/dashboard';
+import { ExpensesPage } from './pages/admin/expenses';
 import { LoginPage } from './pages/admin/login';
 import { OrderDetailPage, OrdersPage } from './pages/admin/orders';
 import { PaymentsPage } from './pages/admin/payments';
@@ -62,6 +63,7 @@ export default function App() {
                   <Route path="compras" element={<PurchasesPage />} />
                   <Route path="ventas" element={<SalesPage />} />
                   <Route path="pagos" element={<PaymentsPage />} />
+                  <Route path="gastos" element={<ExpensesPage />} />
                   <Route path="estadisticas" element={<StatsPage />} />
                   <Route path="usuarios" element={<UsersPage />} />
                   <Route path="configuracion" element={<SettingsPage />} />

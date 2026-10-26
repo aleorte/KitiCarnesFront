@@ -253,6 +253,29 @@ export type UserAccount = {
 
 export type ExpenseReimbursementStatus = 'PENDIENTE' | 'PARCIAL' | 'REINTEGRADO';
 
+export type ExpenseCategory =
+  | 'PROVEEDORES'
+  | 'PUBLICIDAD'
+  | 'LOGISTICA'
+  | 'ADMINISTRACION'
+  | 'BIENES_DE_TRABAJO';
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  'PROVEEDORES',
+  'PUBLICIDAD',
+  'LOGISTICA',
+  'ADMINISTRACION',
+  'BIENES_DE_TRABAJO',
+];
+
+export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
+  PROVEEDORES: 'Proveedores',
+  PUBLICIDAD: 'Publicidad',
+  LOGISTICA: 'Logística / Reparto',
+  ADMINISTRACION: 'Administración / Otros',
+  BIENES_DE_TRABAJO: 'Bienes de trabajo',
+};
+
 export type ExpenseMember = Pick<
   UserAccount,
   'id' | 'firstName' | 'lastName' | 'email' | 'role' | 'isActive'
@@ -272,6 +295,7 @@ export type Expense = {
   memberId: string;
   member: ExpenseMember;
   description: string;
+  category: ExpenseCategory;
   amount: string;
   incurredAt: string;
   reimbursedTotal: string;
@@ -294,7 +318,13 @@ export type ExpenseSummary = {
   spentTotal: string;
   reimbursedTotal: string;
   pendingBalance: string;
+  filtered: boolean;
   members: ExpenseMemberSummary[];
+  overall: {
+    spentTotal: string;
+    reimbursedTotal: string;
+    pendingBalance: string;
+  };
 };
 
 export const EXPENSE_STATUS_LABEL: Record<ExpenseReimbursementStatus, string> = {

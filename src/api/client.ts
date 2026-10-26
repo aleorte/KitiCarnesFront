@@ -125,10 +125,19 @@ export const api = {
   delete: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: 'DELETE' }),
 };
 
-export function toQuery(params: Record<string, string | number | boolean | undefined>) {
+export function toQuery(
+  params: Record<string, string | number | boolean | string[] | undefined> = {},
+) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== '') search.set(key, String(value));
+    if (value === undefined || value === '') return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== '') search.append(key, String(item));
+      });
+      return;
+    }
+    search.set(key, String(value));
   });
   const qs = search.toString();
   return qs ? `?${qs}` : '';

@@ -190,10 +190,12 @@ export const purchasesApi = {
 };
 
 export const expensesApi = {
-  list: (params: Record<string, string | number | undefined> = {}) =>
-    api.get<Paginated<Expense>>(`/expenses${toQuery(params)}`),
-  summary: (memberId?: string) =>
-    api.get<ExpenseSummary>(`/expenses/summary${toQuery({ memberId })}`),
+  list: (
+    params: Record<string, string | number | boolean | string[] | undefined> = {},
+  ) => api.get<Paginated<Expense>>(`/expenses${toQuery(params)}`),
+  summary: (
+    params: Record<string, string | number | boolean | string[] | undefined> = {},
+  ) => api.get<ExpenseSummary>(`/expenses/summary${toQuery(params)}`),
   one: (id: string) => api.get<Expense>(`/expenses/${id}`),
   create: (body: Record<string, unknown>) => api.post<Expense>('/expenses', body),
   update: (id: string, body: Record<string, unknown>) =>

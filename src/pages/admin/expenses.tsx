@@ -20,8 +20,11 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
 import {
+  EXPENSE_CATEGORIES,
+  EXPENSE_CATEGORY_LABEL,
   EXPENSE_STATUS_LABEL,
   type Expense,
+  type ExpenseCategory,
   type ExpenseReimbursementStatus,
 } from '../../types/api';
 import { dateOnly, formatDate, formatMoney } from '../../utils/format';
@@ -29,6 +32,13 @@ import { dateOnly, formatDate, formatMoney } from '../../utils/format';
 const expenseSchema = z.object({
   memberId: z.string().min(1, 'Elegí el integrante'),
   description: z.string().min(2, 'Indicá qué se pagó'),
+  category: z.enum([
+    'PROVEEDORES',
+    'PUBLICIDAD',
+    'LOGISTICA',
+    'ADMINISTRACION',
+    'BIENES_DE_TRABAJO',
+  ]),
   amount: z.string().min(1, 'Ingresá el monto'),
   incurredAt: z.string().min(1, 'Ingresá la fecha'),
 });
@@ -62,22 +72,27 @@ export function ExpensesPage() {
   const canManage = hasPermission('expenses:manage');
   const [memberId, setMemberId] = useState('');
   const [status, setStatus] = useState('');
+  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [reimbursing, setReimbursing] = useState<Expense | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null);
 
+  const filterParams = {
+    memberId: memberId || undefined,
+    status: status || undefined,
+    category: categories.length ? categories : undefined,
+  };
   const summary = useQuery({
-    queryKey: ['expenses-summary', memberId],
-    queryFn: () => expensesApi.summary(memberId || undefined),
+    queryKey: ['expenses-summary', memberId, status, categories],
+    queryFn: () => expensesApi.summary(filterParams),
   });
   const expenses = useQuery({
-    queryKey: ['expenses', memberId, status],
+    queryKey: ['expenses', memberId, status, categories],
     queryFn: () =>
       expensesApi.list({
         limit: 100,
-        memberId: memberId || undefined,
-        status: status || undefined,
+        ...filterParams,
       }),
   });
   const users = useQuery({
@@ -88,7 +103,13 @@ export function ExpensesPage() {
 
   const expenseForm = useForm<ExpenseForm>({
     resolver: zodResolver(expenseSchema),
-    defaultValues: { memberId: '', description: '', amount: '', incurredAt: dateOnly() },
+    defaultValues: {
+      memberId: '',
+      description: '',
+      category: 'ADMINISTRACION',
+      amount: '',
+      incurredAt: dateOnly(),
+    },
   });
   const reimbursementForm = useForm<ReimbursementForm>({
     resolver: zodResolver(reimbursementSchema),
@@ -152,6 +173,7 @@ export function ExpensesPage() {
     expenseForm.reset({
       memberId: memberId || activeMembers[0]?.id || '',
       description: '',
+      category: 'ADMINISTRACION',
       amount: '',
       incurredAt: dateOnly(),
     });
@@ -163,6 +185,7 @@ export function ExpensesPage() {
     expenseForm.reset({
       memberId: expense.memberId,
       description: expense.description,
+      category: expense.category,
       amount: expense.amount,
       incurredAt: toDateInput(expense.incurredAt),
     });
@@ -193,19 +216,31 @@ export function ExpensesPage() {
       {summary.isLoading ? (
         <Skeleton className="mb-6 h-28" />
       ) : summary.data ? (
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
-          <article className="rounded-3xl bg-cream p-5">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Total gastado</p>
-            <p className="font-display text-3xl">{formatMoney(summary.data.spentTotal)}</p>
-          </article>
-          <article className="rounded-3xl bg-cream p-5">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Total reintegrado</p>
-            <p className="font-display text-3xl">{formatMoney(summary.data.reimbursedTotal)}</p>
-          </article>
-          <article className="rounded-3xl bg-gold/20 p-5">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Pendiente de devolver</p>
-            <p className="font-display text-3xl">{formatMoney(summary.data.pendingBalance)}</p>
-          </article>
+        <div className="mb-6">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft/70">
+            {summary.data.filtered ? 'Totales de la selección' : 'Totales generales'}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <article className="rounded-3xl bg-cream p-5">
+              <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Total gastado</p>
+              <p className="font-display text-3xl">{formatMoney(summary.data.spentTotal)}</p>
+            </article>
+            <article className="rounded-3xl bg-cream p-5">
+              <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Total reintegrado</p>
+              <p className="font-display text-3xl">{formatMoney(summary.data.reimbursedTotal)}</p>
+            </article>
+            <article className="rounded-3xl bg-gold/20 p-5">
+              <p className="text-xs uppercase tracking-[0.16em] text-ink-soft/70">Pendiente de devolver</p>
+              <p className="font-display text-3xl">{formatMoney(summary.data.pendingBalance)}</p>
+            </article>
+          </div>
+          {summary.data.filtered ? (
+            <p className="mt-3 text-sm text-ink-soft">
+              Todos los gastos: gastado {formatMoney(summary.data.overall.spentTotal)} · reintegrado{' '}
+              {formatMoney(summary.data.overall.reimbursedTotal)} · pendiente{' '}
+              {formatMoney(summary.data.overall.pendingBalance)}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -243,23 +278,63 @@ export function ExpensesPage() {
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <Select value={memberId} onChange={(event) => setMemberId(event.target.value)}>
-          <option value="">Todos los integrantes</option>
-          {(summary.data?.members ?? []).map((item) => (
-            <option key={item.member.id} value={item.member.id}>
-              {memberName(item.member)}
-            </option>
-          ))}
-        </Select>
-        <Select value={status} onChange={(event) => setStatus(event.target.value)}>
-          <option value="">Todos los estados</option>
-          {Object.entries(EXPENSE_STATUS_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </Select>
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft/70">Filtrar por categoría</p>
+          {memberId || status || categories.length ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11 px-3"
+              onClick={() => {
+                setMemberId('');
+                setStatus('');
+                setCategories([]);
+              }}
+            >
+              Limpiar filtros
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {EXPENSE_CATEGORIES.map((category) => {
+            const selected = categories.includes(category);
+            return (
+              <button
+                key={category}
+                type="button"
+                onClick={() =>
+                  setCategories((current) =>
+                    selected ? current.filter((item) => item !== category) : [...current, category],
+                  )
+                }
+                className={`min-h-11 rounded-full px-3 text-sm font-semibold transition ${
+                  selected ? 'bg-ink text-cream' : 'bg-cream text-ink-soft hover:bg-paper-2'
+                }`}
+              >
+                {EXPENSE_CATEGORY_LABEL[category]}
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Select className="min-h-12" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
+            <option value="">Todos los integrantes</option>
+            {(summary.data?.members ?? []).map((item) => (
+              <option key={item.member.id} value={item.member.id}>
+                {memberName(item.member)}
+              </option>
+            ))}
+          </Select>
+          <Select className="min-h-12" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="">Todos los estados</option>
+            {Object.entries(EXPENSE_STATUS_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       {expenses.isLoading ? (
@@ -274,6 +349,9 @@ export function ExpensesPage() {
                     {memberName(expense.member)} · {formatDate(expense.incurredAt)}
                   </p>
                   <h2 className="font-display text-2xl">{expense.description}</h2>
+                  <p className="mt-1 text-sm font-medium text-ink-soft">
+                    {EXPENSE_CATEGORY_LABEL[expense.category]}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="font-display text-3xl">{formatMoney(expense.amount)}</p>
@@ -314,8 +392,12 @@ export function ExpensesPage() {
         </div>
       ) : (
         <EmptyState
-          title="Todavía no hay gastos"
-          description="Cuando un integrante ponga plata de su bolsillo, registralo acá para saber cuánto hay que devolverle."
+          title={categories.length || memberId || status ? 'No hay gastos con esos filtros' : 'Todavía no hay gastos'}
+          description={
+            categories.length || memberId || status
+              ? 'Probá limpiar los filtros o elegir otras categorías.'
+              : 'Cuando un integrante ponga plata de su bolsillo, registralo acá para saber cuánto hay que devolverle.'
+          }
           action={canManage ? <Button onClick={openCreate}>Registrar gasto</Button> : null}
         />
       )}
@@ -339,6 +421,15 @@ export function ExpensesPage() {
           </Field>
           <Field label="Descripción" error={expenseForm.formState.errors.description?.message}>
             <Textarea rows={3} {...expenseForm.register('description')} />
+          </Field>
+          <Field label="Categoría" error={expenseForm.formState.errors.category?.message}>
+            <Select className="min-h-12" {...expenseForm.register('category')}>
+              {EXPENSE_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {EXPENSE_CATEGORY_LABEL[category]}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="Monto" error={expenseForm.formState.errors.amount?.message}>
             <Input inputMode="decimal" {...expenseForm.register('amount')} />

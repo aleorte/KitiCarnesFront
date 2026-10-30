@@ -1,4 +1,4 @@
-import { api, fetchText, postForm, toQuery } from './client';
+import { api, fetchBlob, fetchText, postForm, toQuery } from './client';
 import type {
   AuthResponse,
   AuthUser,
@@ -15,6 +15,8 @@ import type {
   PaymentStatus,
   Product,
   Purchase,
+  PurchaseDocument,
+  PurchaseSummary,
   Sale,
   SaleUnit,
   StockMovement,
@@ -184,10 +186,30 @@ export const suppliersApi = {
 };
 
 export const purchasesApi = {
-  list: (params: Record<string, string | number | undefined> = {}) =>
+  list: (params: Record<string, string | number | boolean | undefined> = {}) =>
     api.get<Paginated<Purchase>>(`/purchases${toQuery(params)}`),
+  summary: (params: Record<string, string | number | boolean | undefined> = {}) =>
+    api.get<PurchaseSummary>(`/purchases/summary${toQuery(params)}`),
   one: (id: string) => api.get<Purchase>(`/purchases/${id}`),
   create: (body: Record<string, unknown>) => api.post<Purchase>('/purchases', body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<Purchase>(`/purchases/${id}`, body),
+  remove: (id: string) => api.delete<{ id: string; strategy: 'deleted' }>(`/purchases/${id}`),
+  addPayment: (id: string, body: Record<string, unknown>) =>
+    api.post<Purchase>(`/purchases/${id}/payments`, body),
+  removePayment: (id: string, paymentId: string) =>
+    api.delete<Purchase>(`/purchases/${id}/payments/${paymentId}`),
+  uploadDocument: (id: string, file: File, paymentId?: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (paymentId) form.append('paymentId', paymentId);
+    return postForm<PurchaseDocument>(`/purchases/${id}/documents`, form);
+  },
+  documentBlob: (id: string, documentId: string) =>
+    fetchBlob(`/purchases/${id}/documents/${documentId}`),
+  removeDocument: (id: string, documentId: string) =>
+    api.delete<Purchase>(`/purchases/${id}/documents/${documentId}`),
+  registerSupplier: (id: string) => api.post<Purchase>(`/purchases/${id}/register-supplier`, {}),
 };
 
 export const expensesApi = {

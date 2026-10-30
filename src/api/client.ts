@@ -93,6 +93,27 @@ export async function fetchText(path: string): Promise<string> {
   return response.text();
 }
 
+export async function fetchBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (response.status === 401) {
+    setToken(null);
+    window.dispatchEvent(new Event('kitikitikiti:logout'));
+  }
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      await readErrorMessage(response, 'No se pudo abrir el comprobante'),
+    );
+  }
+
+  return response.blob();
+}
+
 export async function postForm<T>(path: string, form: FormData): Promise<T> {
   const token = getToken();
   const response = await fetch(`${API_BASE}${path}`, {

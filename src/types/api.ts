@@ -222,13 +222,37 @@ export type SupplierRemoveResult = {
   };
 };
 
+export type PurchasePayStatus = 'PENDIENTE' | 'PARCIAL' | 'PAGADO';
+
+export type PurchaseDocument = {
+  id: string;
+  mimeType: string;
+  originalName?: string | null;
+  paymentId?: string | null;
+  createdAt: string;
+};
+
+export type PurchasePayment = {
+  id: string;
+  amount: string;
+  method: PaymentMethod;
+  paidAt: string;
+  notes?: string | null;
+  recordedBy?: { id: string; firstName: string; lastName: string };
+  documents: PurchaseDocument[];
+};
+
 export type PurchaseItem = {
   id: string;
-  productId: string;
+  productId?: string | null;
+  productName: string;
+  unitLabel: string;
+  saleUnit?: SaleUnit | null;
   quantity: string;
   unitCost: string;
   lineTotal: string;
-  product?: Pick<Product, 'id' | 'name' | 'saleUnit'>;
+  notes?: string | null;
+  product?: Pick<Product, 'id' | 'name' | 'saleUnit'> | null;
 };
 
 export type Purchase = {
@@ -236,10 +260,32 @@ export type Purchase = {
   status: string;
   purchasedAt: string;
   totalCost: string;
+  paidAmount: string;
+  pendingAmount: string;
+  paymentStatus: PurchasePayStatus;
+  hasDocuments: boolean;
+  invoiceRef?: string | null;
   notes?: string | null;
   wholesaleOrderId?: string | null;
-  supplier: Pick<Supplier, 'id' | 'name'>;
+  supplierId?: string | null;
+  supplierName: string;
+  supplier?: Pick<Supplier, 'id' | 'name'> | null;
   items: PurchaseItem[];
+  payments: PurchasePayment[];
+  documents: PurchaseDocument[];
+};
+
+export type PurchaseSummary = {
+  totalCost: string;
+  paidAmount: string;
+  pendingAmount: string;
+  count: number;
+};
+
+export const PURCHASE_PAY_STATUS_LABEL: Record<PurchasePayStatus, string> = {
+  PENDIENTE: 'Pendiente',
+  PARCIAL: 'Pago parcial',
+  PAGADO: 'Pagado',
 };
 
 export type UserAccount = {

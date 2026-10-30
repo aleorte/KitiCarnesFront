@@ -414,6 +414,7 @@ export type WeeklyProductSummary = {
 
 export type WeeklyOrderRow = {
   id: string;
+  trackingCode?: string | null;
   status: OrderStatus;
   orderedAt: string;
   orderedOn: string;
@@ -429,6 +430,15 @@ export type WeeklyOrderRow = {
     requestedQuantity: string;
     cancelled?: boolean;
   }>;
+};
+
+export type WeeklyCustomerGroup = {
+  customerId: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  customerName: string;
+  orders: WeeklyOrderRow[];
 };
 
 export type WholesaleOrderItem = {
@@ -492,6 +502,7 @@ export type WeeklyOrders = {
   };
   products: WeeklyProductSummary[];
   orders: Paginated<WeeklyOrderRow>;
+  customerGroups: WeeklyCustomerGroup[];
   wholesaleOrder: WholesaleOrder | null;
 };
 

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCheck, ChevronLeft, ChevronRight, Copy, Trash2 } from 'lucide-react';
+import { CheckCheck, ChevronLeft, ChevronRight, Copy, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { suppliersApi, weeklyOrdersApi, type WholesaleItemInput } from '../../api/services';
@@ -16,7 +16,12 @@ import {
   Textarea,
 } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
-import { WHOLESALE_STATUS_LABEL, type WeeklyProductSummary } from '../../types/api';
+import {
+  ORDER_STATUS_LABEL,
+  WHOLESALE_STATUS_LABEL,
+  type WeeklyCustomerGroup,
+  type WeeklyProductSummary,
+} from '../../types/api';
 import { formatCopyQty, formatDateSlash, formatMoney, formatQty } from '../../utils/format';
 
 const MONEY_PATTERN = /^\d+(\.\d{1,2})?$/;
@@ -117,6 +122,87 @@ function emptyDraft(): DraftRow {
   return { quantityToOrder: '', unitCost: '', supplierId: '', receivedQty: '' };
 }
 
+function WeeklyCustomerDetail({ groups }: { groups: WeeklyCustomerGroup[] }) {
+  const [search, setSearch] = useState('');
+  const term = search.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!term) return groups;
+    return groups.filter((group) => {
+      const haystack = [
+        group.customerName,
+        group.firstName,
+        group.lastName,
+        group.phone,
+        ...group.orders.map((order) => order.trackingCode ?? order.id),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [groups, term]);
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-3xl bg-cream">
+      <div className="border-b border-line px-5 py-4">
+        <h2 className="font-display text-2xl">Pedidos por cliente</h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          {groups.length} cliente(s) con pedidos esta semana. Los productos de cada uno están visibles, sin desplegar.
+        </p>
+        <label className="relative mt-4 block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar cliente..."
+            className="pl-10"
+          />
+        </label>
+      </div>
+      {filtered.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-ink-soft">
+          {groups.length === 0
+            ? 'No hay pedidos de clientes en esta semana.'
+            : 'Ningún cliente coincide con la búsqueda.'}
+        </p>
+      ) : (
+        <div className="divide-y divide-line">
+          {filtered.map((group) => (
+            <article key={group.customerId} className="px-5 py-4">
+              <header className="mb-3">
+                <h3 className="font-display text-xl uppercase tracking-wide">{group.customerName}</h3>
+                <p className="text-xs text-ink-soft">
+                  {group.orders.length} pedido(s)
+                  {group.phone ? ` · ${group.phone}` : ''}
+                </p>
+              </header>
+              <div className="space-y-4">
+                {group.orders.map((order) => (
+                  <div key={order.id}>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">
+                      Pedido #{order.trackingCode ?? order.id.slice(0, 8)} · {order.weekday}
+                      {order.status !== 'CONFIRMADO' ? ` · ${ORDER_STATUS_LABEL[order.status]}` : ''}
+                    </p>
+                    <ul className="space-y-1 text-sm">
+                      {order.items.map((item) => (
+                        <li key={item.id} className="flex justify-between gap-3">
+                          <span>{item.productName}</span>
+                          <span className="shrink-0 font-semibold tabular-nums">
+                            {formatQty(item.requestedQuantity, item.saleUnit)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 const TABLE_CONTROL = 'w-full min-w-0 rounded-xl px-2.5 py-1.5 text-sm';
 
 function SupplierSelect({
@@ -185,6 +271,7 @@ export function WeeklyOrdersPage() {
   const [pendingCompleteItems, setPendingCompleteItems] = useState<WholesaleItemInput[] | null>(null);
   const [excludingProduct, setExcludingProduct] = useState<WeeklyProductSummary | null>(null);
   const [resettingWeek, setResettingWeek] = useState(false);
+  const [weekView, setWeekView] = useState<'products' | 'customers'>('products');
 
   const week = useQuery({
     queryKey: ['weekly-orders', weekStart],
@@ -569,7 +656,28 @@ export function WeeklyOrdersPage() {
         </div>
       </section>
 
-      {products.length ? (
+      {products.length || (data.customerGroups ?? []).length ? (
+        <>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={weekView === 'products' ? 'secondary' : 'ghost'}
+              onClick={() => setWeekView('products')}
+            >
+              Consolidado por producto
+            </Button>
+            <Button
+              type="button"
+              variant={weekView === 'customers' ? 'secondary' : 'ghost'}
+              onClick={() => setWeekView('customers')}
+            >
+              Detalle por cliente
+            </Button>
+          </div>
+          {weekView === 'customers' ? (
+            <WeeklyCustomerDetail groups={data.customerGroups ?? []} />
+          ) : null}
+          {weekView === 'products' ? (
         <>
           <section className="mt-6 overflow-hidden rounded-3xl bg-cream">
             <div className="border-b border-line px-5 py-4">
@@ -1008,6 +1116,8 @@ export function WeeklyOrdersPage() {
               </>
             )}
           </section>
+        </>
+          ) : null}
         </>
       ) : (
         <div className="mt-6">

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ApiError } from '../../api/client';
-import { ordersApi, paymentsApi } from '../../api/services';
+import { ordersApi, paymentsApi, productsApi } from '../../api/services';
 import { CreateOrderDialog } from './create-order-dialog';
 import { StatusBadge } from '../../components/commerce';
 import {
@@ -32,8 +32,19 @@ import {
   type Order,
   type OrderStatus,
   type PaymentMethod,
+  type Product,
 } from '../../types/api';
-import { formatDate, formatKgDelta, formatMoney, formatQty, needsWeighing, orderPublicCode } from '../../utils/format';
+import {
+  estimatedLineTotals,
+  formatDate,
+  formatKgDelta,
+  formatMoney,
+  formatMoneyRange,
+  formatQty,
+  needsWeighing,
+  orderPublicCode,
+  toDecimalString,
+} from '../../utils/format';
 import {
   buildConfirmedOrderWhatsAppMessage,
   canMessageOrderOnWhatsApp,
@@ -295,7 +306,10 @@ export function OrdersPage() {
       <OrderEditDialog
         order={editing}
         onClose={() => setEditing(null)}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ['orders'] })}
+        onSaved={() => {
+          void queryClient.invalidateQueries({ queryKey: ['orders'] });
+          void queryClient.invalidateQueries({ queryKey: ['weekly-orders'] });
+        }}
       />
       <ConfirmDialog
         open={Boolean(pendingDelete)}
@@ -317,6 +331,52 @@ export function OrdersPage() {
   );
 }
 
+type EditDraftItem = {
+  productId: string;
+  name: string;
+  saleUnit: Product['saleUnit'];
+  salePrice: string;
+  estimatedMinKg?: string | null;
+  estimatedMaxKg?: string | null;
+  quantity: string;
+};
+
+function itemsLockedReason(order: Order) {
+  if (order.items.some((item) => item.actualKg != null && item.actualKg !== '')) {
+    return 'Este pedido ya tiene pesos reales. Solo se pueden editar las notas.';
+  }
+  if (order.stockDeducted) {
+    return 'El stock de este pedido ya se descontó. Solo se pueden editar las notas.';
+  }
+  if (order.items.some((item) => item.weeklyCoveredAt)) {
+    return 'Este pedido ya se cubrió con la compra de la semana. Solo se pueden editar las notas.';
+  }
+  return null;
+}
+
+function draftFromOrder(order: Order): EditDraftItem[] {
+  const drafts: EditDraftItem[] = [];
+  for (const item of order.items) {
+    if (item.cancelledAt || !item.productId) continue;
+    const quantity = item.saleUnit === 'KILOGRAM' ? (item.requestedKg ?? item.quantity) : item.quantity;
+    const existing = drafts.find((row) => row.productId === item.productId);
+    if (existing) {
+      existing.quantity = String(Number(existing.quantity) + Number(quantity));
+      continue;
+    }
+    drafts.push({
+      productId: item.productId,
+      name: item.productName,
+      saleUnit: item.saleUnit,
+      salePrice: item.unitPrice,
+      estimatedMinKg: item.estimatedMinKg,
+      estimatedMaxKg: item.estimatedMaxKg,
+      quantity: String(Number(quantity)),
+    });
+  }
+  return drafts;
+}
+
 function OrderEditDialog({
   order,
   onClose,
@@ -327,93 +387,299 @@ function OrderEditDialog({
   onSaved: () => void;
 }) {
   const [notes, setNotes] = useState('');
-  const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const hasActualKg = Boolean(order?.items.some((item) => item.actualKg != null && item.actualKg !== ''));
+  const [items, setItems] = useState<EditDraftItem[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [productId, setProductId] = useState('');
+  const [qty, setQty] = useState('1');
+  const [confirming, setConfirming] = useState(false);
+  const lockedReason = order ? itemsLockedReason(order) : null;
+
+  const catalog = useQuery({
+    queryKey: ['products', 'order-edit'],
+    queryFn: () => productsApi.list({ limit: 100, status: 'active' }),
+    enabled: Boolean(order) && !lockedReason,
+  });
 
   useEffect(() => {
     if (!order) return;
     setNotes(order.notes ?? '');
-    setQuantities(
-      Object.fromEntries(order.items.filter((item) => !item.cancelledAt).map((item) => [item.id, item.quantity])),
-    );
+    setItems(draftFromOrder(order));
+    setProductSearch('');
+    setProductId('');
+    setQty('1');
+    setConfirming(false);
   }, [order]);
+
+  const products = catalog.data?.data ?? [];
+  const selected = useMemo(
+    () => products.find((product) => product.id === productId),
+    [productId, products],
+  );
+  const matches = useMemo(() => {
+    const term = productSearch.trim().toLowerCase();
+    return products
+      .filter((product) => !term || product.name.toLowerCase().includes(term))
+      .slice(0, 8);
+  }, [productSearch, products]);
+
+  const originalIds = useMemo(
+    () => new Set(order ? draftFromOrder(order).map((item) => item.productId) : []),
+    [order],
+  );
+  const removedCount = [...originalIds].filter((id) => !items.some((item) => item.productId === id)).length;
+
+  const totals = items.reduce(
+    (acc, item) => {
+      const range = estimatedLineTotals({
+        ...item,
+        quantity: Number(item.quantity) || 0,
+      });
+      return { min: acc.min + range.min, max: acc.max + range.max };
+    },
+    { min: 0, max: 0 },
+  );
+
+  function addItem() {
+    if (!order) return;
+    if (!selected) {
+      toast.error('Elegí un corte');
+      return;
+    }
+    const quantity = Number(qty.replace(',', '.'));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Ingresá una cantidad válida');
+      return;
+    }
+    if (selected.saleUnit === 'UNIT' && !Number.isInteger(quantity)) {
+      toast.error('Para este corte la cantidad tiene que ser un número entero');
+      return;
+    }
+    setItems((current) => {
+      const existing = current.find((item) => item.productId === selected.id);
+      if (existing) {
+        return current.map((item) =>
+          item.productId === selected.id
+            ? { ...item, quantity: String(Number(item.quantity) + quantity) }
+            : item,
+        );
+      }
+      const original = order.items.find((item) => item.productId === selected.id && !item.cancelledAt);
+      const keepSnapshot = original && original.saleUnit === selected.saleUnit;
+      return [
+        ...current,
+        {
+          productId: selected.id,
+          name: keepSnapshot ? original.productName : selected.name,
+          saleUnit: selected.saleUnit,
+          salePrice: keepSnapshot ? original.unitPrice : selected.salePrice,
+          estimatedMinKg: keepSnapshot
+            ? original.estimatedMinKg
+            : selected.saleUnit === 'KILOGRAM'
+              ? null
+              : selected.estimatedMinKg,
+          estimatedMaxKg: keepSnapshot
+            ? original.estimatedMaxKg
+            : selected.saleUnit === 'KILOGRAM'
+              ? null
+              : selected.estimatedMaxKg,
+          quantity: String(quantity),
+        },
+      ];
+    });
+    setQty('1');
+    toast.success(`${selected.name} actualizado en el pedido`);
+  }
 
   const save = useMutation({
     mutationFn: () => {
       if (!order) throw new Error('Pedido inválido');
-      const items = hasActualKg
-        ? undefined
-        : order.items
-            .filter((item) => !item.cancelledAt && item.productId)
-            .map((item) => {
-              const quantity = (quantities[item.id] ?? '').trim();
-              if (!quantity || !QUANTITY_PATTERN.test(quantity) || Number(quantity) <= 0) {
-                throw new Error(`Revisá la cantidad de ${item.productName}`);
-              }
-              return {
-                productId: item.productId,
-                quantity,
-                requestedKg: item.saleUnit === 'KILOGRAM' ? quantity : undefined,
-              };
-            });
+      if (!lockedReason) {
+        if (items.length === 0) {
+          throw new Error('El pedido tiene que tener al menos un corte');
+        }
+        for (const item of items) {
+          const quantity = item.quantity.trim().replace(',', '.');
+          if (!quantity || !QUANTITY_PATTERN.test(quantity) || Number(quantity) <= 0) {
+            throw new Error(`Revisá la cantidad de ${item.name}`);
+          }
+          if (item.saleUnit === 'UNIT' && !Number.isInteger(Number(quantity))) {
+            throw new Error(`La cantidad de ${item.name} tiene que ser un número entero`);
+          }
+        }
+      }
       return ordersApi.update(order.id, {
         notes,
-        ...(items && items.length ? { items } : {}),
+        ...(lockedReason
+          ? {}
+          : {
+              items: items.map((item) => ({
+                productId: item.productId,
+                quantity: toDecimalString(Number(item.quantity.replace(',', '.'))),
+                requestedKg:
+                  item.saleUnit === 'KILOGRAM'
+                    ? toDecimalString(Number(item.quantity.replace(',', '.')))
+                    : undefined,
+              })),
+            }),
       });
     },
     onSuccess: () => {
       toast.success('Pedido actualizado');
+      setConfirming(false);
       onSaved();
       onClose();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
+  function requestSave() {
+    if (!lockedReason && removedCount > 0) {
+      setConfirming(true);
+      return;
+    }
+    save.mutate();
+  }
+
   return (
-    <Modal
-      open={Boolean(order)}
-      title={order ? `Editar pedido #${orderPublicCode(order)}` : 'Editar pedido'}
-      description={
-        hasActualKg
-          ? 'Este pedido ya tiene pesos reales. Solo se pueden editar las notas.'
-          : 'Podés actualizar las notas y las cantidades solicitadas. El precio de venta histórico no cambia.'
-      }
-      onClose={onClose}
-    >
-      {order ? (
-        <div className="space-y-4">
-          {!hasActualKg
-            ? order.items
-                .filter((item) => !item.cancelledAt)
-                .map((item) => (
-                  <Field
-                    key={item.id}
-                    label={`${item.productName} (${item.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'})`}
-                  >
+    <>
+      <Modal
+        open={Boolean(order)}
+        size="xl"
+        title={order ? `Editar pedido #${orderPublicCode(order)}` : 'Editar pedido'}
+        description={
+          lockedReason ??
+          'Agregá, quitá o cambiá cantidades como en un carrito. Los precios de los cortes que ya estaban se conservan.'
+        }
+        onClose={onClose}
+      >
+        {order ? (
+          <div className="space-y-5">
+            {!lockedReason ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]">
+                  <Field label="Buscar corte" hint={selected ? selected.name : 'Elegí un producto de la lista'}>
                     <Input
-                      inputMode="decimal"
-                      value={quantities[item.id] ?? ''}
-                      onChange={(event) =>
-                        setQuantities((prev) => ({ ...prev, [item.id]: event.target.value }))
-                      }
+                      value={productSearch}
+                      onChange={(event) => {
+                        setProductSearch(event.target.value);
+                        setProductId('');
+                      }}
+                      placeholder="Nalga, vacío, milanesa..."
                     />
                   </Field>
-                ))
-            : null}
-          <Field label="Notas">
-            <Textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>
-              {save.isPending ? 'Guardando...' : 'Guardar cambios'}
-            </Button>
+                  <Field label={selected?.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
+                    <Input value={qty} inputMode="decimal" onChange={(event) => setQty(event.target.value)} />
+                  </Field>
+                  <Button type="button" className="self-end" onClick={addItem}>
+                    Agregar
+                  </Button>
+                </div>
+                {matches.length ? (
+                  <ul className="grid gap-1 sm:grid-cols-2">
+                    {matches.map((product) => {
+                      const inOrder = items.some((item) => item.productId === product.id);
+                      return (
+                        <li key={product.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProductId(product.id);
+                              setProductSearch(product.name);
+                            }}
+                            className={`w-full rounded-2xl px-3 py-2 text-left text-sm transition ${
+                              productId === product.id
+                                ? 'bg-ink text-cream'
+                                : 'bg-paper text-ink hover:bg-paper-2'
+                            }`}
+                          >
+                            <span className="font-semibold">{product.name}</span>
+                            <span className="mt-0.5 block text-xs opacity-80">
+                              {formatMoney(product.salePrice)} · {product.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'}
+                              {inOrder ? ' · ya está en el pedido' : ''}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-ink-soft">No hay cortes que coincidan con la búsqueda.</p>
+                )}
+
+                {items.length > 0 ? (
+                  <ul className="space-y-2 rounded-2xl bg-paper p-3 text-sm">
+                    {items.map((item) => (
+                      <li key={item.productId} className="flex flex-col gap-2 border-b border-line/70 py-2 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="min-w-0 flex-1">
+                          <span className="font-semibold">{item.name}</span>
+                          <span className="block text-ink-soft">
+                            {formatMoney(item.salePrice)} · {item.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            className="w-24 py-2"
+                            inputMode="decimal"
+                            value={item.quantity}
+                            onChange={(event) =>
+                              setItems((current) =>
+                                current.map((row) =>
+                                  row.productId === item.productId
+                                    ? { ...row, quantity: event.target.value }
+                                    : row,
+                                ),
+                              )
+                            }
+                            aria-label={`Cantidad de ${item.name}`}
+                          />
+                          <button
+                            type="button"
+                            className="text-blood"
+                            onClick={() =>
+                              setItems((current) => current.filter((row) => row.productId !== item.productId))
+                            }
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                    <li className="flex justify-between pt-1 font-semibold">
+                      <span>Estimado</span>
+                      <span>{formatMoneyRange(totals.min, totals.max)}</span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="text-sm text-ink-soft">Todavía no hay cortes en este pedido.</p>
+                )}
+              </>
+            ) : null}
+
+            <Field label="Notas">
+              <Textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button type="button" disabled={save.isPending} onClick={requestSave}>
+                {save.isPending ? 'Guardando...' : 'Guardar cambios'}
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : null}
-    </Modal>
+        ) : null}
+      </Modal>
+      <ConfirmDialog
+        open={confirming}
+        title="¿Quitar cortes de este pedido?"
+        description={`Vas a eliminar ${removedCount} corte(s) del pedido. El código de seguimiento, el cliente y los estados de pago y entrega no cambian.`}
+        confirmLabel="Guardar y quitar"
+        danger
+        loading={save.isPending}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => save.mutate()}
+      />
+    </>
   );
 }
 
@@ -430,6 +696,7 @@ export function OrderDetailPage() {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['order', id] });
     queryClient.invalidateQueries({ queryKey: ['orders'] });
+    queryClient.invalidateQueries({ queryKey: ['weekly-orders'] });
   };
 
   const statusMutation = useMutation({

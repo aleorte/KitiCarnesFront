@@ -28,6 +28,7 @@ import type {
   UserAccount,
   Expense,
   ExpenseSummary,
+  DeliveryRoute,
   WeeklyOrders,
   WeeklyProductSources,
   WholesaleOrder,
@@ -236,6 +237,12 @@ export type WholesaleItemInput = {
   supplierId?: string;
   /** Precio de coste de esta compra concreta, no del producto. */
   unitCost?: string;
+};
+
+export const deliveryRouteApi = {
+  week: (weekStart?: string) =>
+    api.get<DeliveryRoute>(`/delivery-route${toQuery({ weekStart })}`),
+  geocode: (customerId: string) => api.post<Customer>(`/delivery-route/customers/${customerId}/geocode`, {}),
 };
 
 export const weeklyOrdersApi = {

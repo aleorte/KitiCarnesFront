@@ -548,15 +548,27 @@ function OrderEditDialog({
         title={order ? `Editar pedido #${orderPublicCode(order)}` : 'Editar pedido'}
         description={
           lockedReason ??
-          'Agregá, quitá o cambiá cantidades como en un carrito. Los precios de los cortes que ya estaban se conservan.'
+          'Agregá, quitá o cambiá cantidades. Los precios de los cortes que ya estaban se conservan.'
+        }
+        footer={
+          order ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" className="min-h-12 w-full sm:w-auto" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button type="button" className="min-h-12 w-full sm:w-auto" disabled={save.isPending} onClick={requestSave}>
+                {save.isPending ? 'Guardando...' : 'Guardar cambios'}
+              </Button>
+            </div>
+          ) : null
         }
         onClose={onClose}
       >
         {order ? (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {!lockedReason ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]">
+                <div className="grid gap-3">
                   <Field label="Buscar corte" hint={selected ? selected.name : 'Elegí un producto de la lista'}>
                     <Input
                       value={productSearch}
@@ -565,17 +577,25 @@ function OrderEditDialog({
                         setProductId('');
                       }}
                       placeholder="Nalga, vacío, milanesa..."
+                      className="min-h-12"
                     />
                   </Field>
-                  <Field label={selected?.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
-                    <Input value={qty} inputMode="decimal" onChange={(event) => setQty(event.target.value)} />
-                  </Field>
-                  <Button type="button" className="self-end" onClick={addItem}>
-                    Agregar
-                  </Button>
+                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                    <Field label={selected?.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
+                      <Input
+                        value={qty}
+                        inputMode="decimal"
+                        onChange={(event) => setQty(event.target.value)}
+                        className="min-h-12"
+                      />
+                    </Field>
+                    <Button type="button" className="min-h-12 self-end px-5" onClick={addItem}>
+                      Agregar
+                    </Button>
+                  </div>
                 </div>
                 {matches.length ? (
-                  <ul className="grid gap-1 sm:grid-cols-2">
+                  <ul className="grid gap-2 sm:grid-cols-2">
                     {matches.map((product) => {
                       const inOrder = items.some((item) => item.productId === product.id);
                       return (
@@ -586,13 +606,13 @@ function OrderEditDialog({
                               setProductId(product.id);
                               setProductSearch(product.name);
                             }}
-                            className={`w-full rounded-2xl px-3 py-2 text-left text-sm transition ${
+                            className={`min-h-12 w-full rounded-2xl px-3 py-2.5 text-left text-sm transition ${
                               productId === product.id
                                 ? 'bg-ink text-cream'
                                 : 'bg-paper text-ink hover:bg-paper-2'
                             }`}
                           >
-                            <span className="font-semibold">{product.name}</span>
+                            <span className="font-semibold break-words">{product.name}</span>
                             <span className="mt-0.5 block text-xs opacity-80">
                               {formatMoney(product.salePrice)} · {product.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'}
                               {inOrder ? ' · ya está en el pedido' : ''}
@@ -609,16 +629,19 @@ function OrderEditDialog({
                 {items.length > 0 ? (
                   <ul className="space-y-2 rounded-2xl bg-paper p-3 text-sm">
                     {items.map((item) => (
-                      <li key={item.productId} className="flex flex-col gap-2 border-b border-line/70 py-2 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
-                        <span className="min-w-0 flex-1">
-                          <span className="font-semibold">{item.name}</span>
+                      <li
+                        key={item.productId}
+                        className="flex flex-col gap-2 border-b border-line/70 py-3 last:border-b-0"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-semibold break-words">{item.name}</span>
                           <span className="block text-ink-soft">
                             {formatMoney(item.salePrice)} · {item.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'}
                           </span>
                         </span>
-                        <div className="flex items-center gap-2">
+                        <div className="grid grid-cols-[1fr_auto] gap-2">
                           <Input
-                            className="w-24 py-2"
+                            className="min-h-12"
                             inputMode="decimal"
                             value={item.quantity}
                             onChange={(event) =>
@@ -632,21 +655,22 @@ function OrderEditDialog({
                             }
                             aria-label={`Cantidad de ${item.name}`}
                           />
-                          <button
+                          <Button
                             type="button"
-                            className="text-blood"
+                            variant="danger"
+                            className="min-h-12 px-4"
                             onClick={() =>
                               setItems((current) => current.filter((row) => row.productId !== item.productId))
                             }
                           >
                             Quitar
-                          </button>
+                          </Button>
                         </div>
                       </li>
                     ))}
-                    <li className="flex justify-between pt-1 font-semibold">
+                    <li className="flex justify-between gap-3 pt-1 font-semibold">
                       <span>Estimado</span>
-                      <span>{formatMoneyRange(totals.min, totals.max)}</span>
+                      <span className="text-right">{formatMoneyRange(totals.min, totals.max)}</span>
                     </li>
                   </ul>
                 ) : (
@@ -658,14 +682,6 @@ function OrderEditDialog({
             <Field label="Notas">
               <Textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
             </Field>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={onClose}>
-                Cancelar
-              </Button>
-              <Button type="button" disabled={save.isPending} onClick={requestSave}>
-                {save.isPending ? 'Guardando...' : 'Guardar cambios'}
-              </Button>
-            </div>
           </div>
         ) : null}
       </Modal>

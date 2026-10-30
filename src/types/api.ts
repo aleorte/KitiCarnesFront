@@ -441,6 +441,58 @@ export type WeeklyCustomerGroup = {
   orders: WeeklyOrderRow[];
 };
 
+export type DeliveryRouteStop = {
+  customerId: string;
+  customerName: string;
+  phone: string;
+  address: string;
+  notes?: string | null;
+  lat?: string | number | null;
+  lng?: string | number | null;
+  geoStatus: 'PENDING' | 'LOCATED' | 'UNLOCATED';
+  geoFailureReason?: string | null;
+  pending: boolean;
+  orders: Array<{
+    id: string;
+    trackingCode: string;
+    status: OrderStatus;
+    notes?: string | null;
+    items: Array<{
+      id: string;
+      productName: string;
+      saleUnit: SaleUnit;
+      quantity: string;
+    }>;
+  }>;
+};
+
+export type DeliveryRoute = {
+  timezone: string;
+  weekStart: string;
+  weekEnd: string;
+  previousWeekStart: string;
+  nextWeekStart: string;
+  label: string;
+  shortLabel: string;
+  area: {
+    locality: string;
+    region: string;
+    country: string;
+    center: { lat: number; lng: number };
+  };
+  summary: {
+    stops: number;
+    located: number;
+    unlocated: number;
+    pending: number;
+    delivered: number;
+  };
+  proximityOrder: string[];
+  geocodedThisRequest: number;
+  stops: DeliveryRouteStop[];
+  unlocated: DeliveryRouteStop[];
+};
+
 export type WholesaleOrderItem = {
   id: string;
   productId: string;

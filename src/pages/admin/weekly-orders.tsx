@@ -142,9 +142,9 @@ function WeeklyCustomerDetail({ groups }: { groups: WeeklyCustomerGroup[] }) {
   }, [groups, term]);
 
   return (
-    <section className="mt-6 overflow-hidden rounded-3xl bg-cream">
-      <div className="border-b border-line px-5 py-4">
-        <h2 className="font-display text-2xl">Pedidos por cliente</h2>
+    <section className="mt-4 min-w-0">
+      <div className="rounded-3xl bg-cream px-4 py-4 sm:px-5">
+        <h2 className="font-display text-2xl leading-tight">Pedidos por cliente</h2>
         <p className="mt-1 text-sm text-ink-soft">
           {groups.length} cliente(s) con pedidos esta semana. Los productos de cada uno están visibles, sin desplegar.
         </p>
@@ -154,38 +154,38 @@ function WeeklyCustomerDetail({ groups }: { groups: WeeklyCustomerGroup[] }) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar cliente..."
-            className="pl-10"
+            className="min-h-12 pl-10"
           />
         </label>
       </div>
       {filtered.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-ink-soft">
+        <p className="px-1 py-8 text-sm text-ink-soft">
           {groups.length === 0
             ? 'No hay pedidos de clientes en esta semana.'
             : 'Ningún cliente coincide con la búsqueda.'}
         </p>
       ) : (
-        <div className="divide-y divide-line">
+        <div className="mt-3 space-y-3 pb-6">
           {filtered.map((group) => (
-            <article key={group.customerId} className="px-5 py-4">
+            <article key={group.customerId} className="min-w-0 rounded-3xl bg-cream px-4 py-4 sm:px-5">
               <header className="mb-3">
-                <h3 className="font-display text-xl uppercase tracking-wide">{group.customerName}</h3>
-                <p className="text-xs text-ink-soft">
+                <h3 className="font-display text-xl leading-tight break-words">{group.customerName}</h3>
+                <p className="mt-1 text-xs text-ink-soft">
                   {group.orders.length} pedido(s)
                   {group.phone ? ` · ${group.phone}` : ''}
                 </p>
               </header>
               <div className="space-y-4">
                 {group.orders.map((order) => (
-                  <div key={order.id}>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">
+                  <div key={order.id} className="min-w-0">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
                       Pedido #{order.trackingCode ?? order.id.slice(0, 8)} · {order.weekday}
                       {order.status !== 'CONFIRMADO' ? ` · ${ORDER_STATUS_LABEL[order.status]}` : ''}
                     </p>
-                    <ul className="space-y-1 text-sm">
+                    <ul className="space-y-2 text-sm">
                       {order.items.map((item) => (
-                        <li key={item.id} className="flex justify-between gap-3">
-                          <span>{item.productName}</span>
+                        <li key={item.id} className="flex items-start justify-between gap-3">
+                          <span className="min-w-0 break-words">{item.productName}</span>
                           <span className="shrink-0 font-semibold tabular-nums">
                             {formatQty(item.requestedQuantity, item.saleUnit)}
                           </span>
@@ -590,10 +590,10 @@ export function WeeklyOrdersPage() {
   ).length;
 
   return (
-    <div className="mx-auto max-w-7xl">
-      <PageHeader
-        eyebrow={data.isCurrent ? 'Semana actual' : 'Otra semana'}
-        title="Pedidos semanales"
+      <div className="mx-auto min-w-0 max-w-7xl">
+        <PageHeader
+          eyebrow={data.isCurrent ? 'Semana actual' : 'Otra semana'}
+          title="Pedidos semanales"
         description={`${data.shortLabel ?? data.label}. Del jueves al miércoles: la demanda activa es lo que hay que cubrir con el pedido a proveedores.`}
         actions={
           <Button variant="danger" onClick={() => setResettingWeek(true)}>
@@ -658,21 +658,29 @@ export function WeeklyOrdersPage() {
 
       {products.length || (data.customerGroups ?? []).length ? (
         <>
-          <div className="mt-6 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant={weekView === 'products' ? 'secondary' : 'ghost'}
-              onClick={() => setWeekView('products')}
-            >
-              Consolidado por producto
-            </Button>
-            <Button
-              type="button"
-              variant={weekView === 'customers' ? 'secondary' : 'ghost'}
-              onClick={() => setWeekView('customers')}
-            >
-              Detalle por cliente
-            </Button>
+          <div className="sticky top-0 z-20 -mx-4 mt-6 bg-paper/95 px-4 py-3 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+            <div className="grid grid-cols-2 gap-1 rounded-2xl bg-cream p-1">
+              <button
+                type="button"
+                onClick={() => setWeekView('products')}
+                className={`min-h-12 rounded-xl px-2 text-sm font-semibold leading-tight transition ${
+                  weekView === 'products' ? 'bg-ink text-cream' : 'text-ink'
+                }`}
+              >
+                <span className="sm:hidden">Consolidado</span>
+                <span className="hidden sm:inline">Consolidado por producto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekView('customers')}
+                className={`min-h-12 rounded-xl px-2 text-sm font-semibold leading-tight transition ${
+                  weekView === 'customers' ? 'bg-ink text-cream' : 'text-ink'
+                }`}
+              >
+                <span className="sm:hidden">Por cliente</span>
+                <span className="hidden sm:inline">Detalle por cliente</span>
+              </button>
+            </div>
           </div>
           {weekView === 'customers' ? (
             <WeeklyCustomerDetail groups={data.customerGroups ?? []} />

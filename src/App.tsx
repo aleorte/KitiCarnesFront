@@ -20,6 +20,7 @@ import { StatsPage } from './pages/admin/stats';
 import { StockPage } from './pages/admin/stock';
 import { SuppliersPage } from './pages/admin/suppliers';
 import { UsersPage } from './pages/admin/users';
+import { DeliveryRoutePage } from './pages/admin/delivery-route';
 import { WeeklyOrdersPage } from './pages/admin/weekly-orders';
 import { CartPage } from './pages/store/cart';
 import { CatalogPage } from './pages/store/catalog';
@@ -54,6 +55,7 @@ export default function App() {
                   <Route path="pedidos" element={<OrdersPage />} />
                   <Route path="pedidos/:id" element={<OrderDetailPage />} />
                   <Route path="pedidos-semanales" element={<WeeklyOrdersPage />} />
+                  <Route path="recorrido" element={<DeliveryRoutePage />} />
                   <Route path="planificacion" element={<Navigate to="/admin/pedidos-semanales" replace />} />
                   <Route path="productos" element={<ProductsPage />} />
                   <Route path="stock" element={<StockPage />} />

@@ -159,6 +159,7 @@ export function Modal({
   title,
   description,
   children,
+  footer,
   onClose,
   size = 'md',
 }: {
@@ -166,6 +167,7 @@ export function Modal({
   title: string;
   description?: string;
   children: ReactNode;
+  footer?: ReactNode;
   onClose: () => void;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
@@ -201,13 +203,14 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="modal-title"
         className={cn(
-          'relative flex max-h-[min(92vh,840px)] w-full flex-col overflow-hidden rounded-3xl border border-line bg-cream shadow-2xl',
+          'relative flex max-h-[min(94dvh,840px)] w-full min-w-0 flex-col overflow-hidden rounded-3xl border border-line bg-cream shadow-2xl',
+          size === 'xl' && 'max-sm:h-[min(94dvh,840px)]',
           widths[size],
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
-          <div>
-            <h2 id="modal-title" className="font-display text-2xl tracking-tight">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="min-w-0">
+            <h2 id="modal-title" className="font-display text-xl tracking-tight sm:text-2xl">
               {title}
             </h2>
             {description ? <p className="mt-1 text-sm text-ink-soft/80">{description}</p> : null}
@@ -221,7 +224,10 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+        {footer ? (
+          <div className="shrink-0 border-t border-line bg-cream px-4 py-3 sm:px-6">{footer}</div>
+        ) : null}
       </div>
     </div>,
     document.body,

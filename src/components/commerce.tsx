@@ -147,7 +147,7 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
           : status === 'EN_ENTREGA'
             ? 'forest'
             : status === 'EN_PREPARACION'
-              ? 'neutral'
-              : 'gold';
+              ? 'gold'
+              : 'neutral';
   return <Badge tone={tone}>{ORDER_STATUS_LABEL[status]}</Badge>;
 }

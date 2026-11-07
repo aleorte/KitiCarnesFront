@@ -113,6 +113,9 @@ export type OrderItem = {
   estimatedLineTotalMax?: string | null;
   /** Kilos realmente pesados al entregar, solo en cortes de peso variable. */
   actualKg?: string | null;
+  actualQuantity?: string | null;
+  preparedAt?: string | null;
+  unavailableReason?: string | null;
   unitPrice: string;
   unitCost?: string | null;
   estimatedLineTotal: string;
@@ -131,6 +134,7 @@ export type Order = {
   finalTotal?: string | null;
   notes?: string | null;
   orderedAt: string;
+  deliveredAt?: string | null;
   /** IP del mostrador público. Nulo en pedidos cargados por el equipo. */
   sourceIp?: string | null;
   customer?: Customer;
@@ -510,11 +514,18 @@ export type DeliveryRouteStop = {
     trackingCode: string;
     status: OrderStatus;
     notes?: string | null;
+    paymentStatus?: PaymentStatus;
+    finalTotal?: string | null;
+    deliveredAt?: string | null;
     items: Array<{
       id: string;
       productName: string;
       saleUnit: SaleUnit;
       quantity: string;
+      actualQuantity?: string;
+      unavailableReason?: string | null;
+      prepared?: boolean;
+      lineTotal?: string | null;
     }>;
   }>;
 };
@@ -642,8 +653,8 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   PENDIENTE: 'Pendiente',
   PENDIENTE_WHATSAPP: 'Pendiente de WhatsApp',
   CONFIRMADO: 'Confirmado',
-  EN_PREPARACION: 'En preparación',
-  LISTO: 'Listo',
+  EN_PREPARACION: 'Preparando',
+  LISTO: 'Preparado',
   EN_ENTREGA: 'En entrega',
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
@@ -653,6 +664,7 @@ export const ORDER_FLOW: OrderStatus[] = [
   'PENDIENTE',
   'CONFIRMADO',
   'EN_PREPARACION',
+  'LISTO',
   'ENTREGADO',
 ];
 
@@ -688,7 +700,7 @@ export function isOrderDeletable(order: Pick<Order, 'status' | 'paymentStatus' |
 export function orderFlowIndex(status: OrderStatus) {
   if (status === 'CANCELADO') return -1;
   if (status === 'PENDIENTE_WHATSAPP') return ORDER_FLOW.indexOf('PENDIENTE');
-  if (status === 'LISTO' || status === 'EN_ENTREGA') return ORDER_FLOW.indexOf('EN_PREPARACION');
+  if (status === 'EN_ENTREGA') return ORDER_FLOW.indexOf('LISTO');
   return Math.max(0, ORDER_FLOW.indexOf(status));
 }
 
@@ -705,21 +717,15 @@ export const ORDER_STATUS_ACTIONS: Record<
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
   ],
   CONFIRMADO: [
-    { to: 'EN_PREPARACION', label: 'Preparar', variant: 'primary' },
+    { to: 'EN_PREPARACION', label: 'Iniciar preparación', variant: 'primary' },
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
   ],
   EN_PREPARACION: [
-    { to: 'ENTREGADO', label: 'Entregar', variant: 'primary' },
+    { to: 'LISTO', label: 'Finalizar preparación', variant: 'primary' },
     { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
   ],
-  LISTO: [
-    { to: 'ENTREGADO', label: 'Entregar', variant: 'primary' },
-    { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
-  ],
-  EN_ENTREGA: [
-    { to: 'ENTREGADO', label: 'Entregar', variant: 'primary' },
-    { to: 'CANCELADO', label: 'Cancelar', variant: 'danger' },
-  ],
+  LISTO: [{ to: 'CANCELADO', label: 'Cancelar', variant: 'danger' }],
+  EN_ENTREGA: [{ to: 'CANCELADO', label: 'Cancelar', variant: 'danger' }],
   ENTREGADO: [],
   CANCELADO: [],
 };

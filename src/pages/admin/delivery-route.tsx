@@ -3,23 +3,29 @@ import { ChevronLeft, ChevronRight, ExternalLink, MapPinned, Navigation } from '
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { customersApi, deliveryRouteApi } from '../../api/services';
+import { customersApi, deliveryRouteApi, ordersApi, paymentsApi } from '../../api/services';
 import { WhatsAppButton } from '../../components/whatsapp-button';
 import {
   Button,
+  ConfirmDialog,
   EmptyState,
   Field,
   Modal,
   PageHeader,
+  Select,
   Skeleton,
   Textarea,
 } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth';
 import {
   ORDER_STATUS_LABEL,
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_STATUS_LABEL,
   type DeliveryRouteStop,
+  type PaymentMethod,
 } from '../../types/api';
-import { formatDateSlash, formatQty, orderPublicCode } from '../../utils/format';
+import { formatDateSlash, formatMoney, formatQty, orderPublicCode } from '../../utils/format';
+import { deliveryWhatsAppMessage } from '../../utils/order-prep';
 import { DeliveryMap, type MapGroup } from './delivery-map';
 
 function mapsSearchUrl(address: string, locality: string, region: string, country: string) {
@@ -76,7 +82,13 @@ function StopDetails({
             Buscar en Maps
           </a>
         )}
-        {stop.phone ? <WhatsAppButton phone={stop.phone} /> : null}
+        {stop.phone ? (
+          <WhatsAppButton
+            phone={stop.phone}
+            message={deliveryWhatsAppMessage(stop.customerName.split(' ')[0] ?? '')}
+            label="Avisar entrega"
+          />
+        ) : null}
       </div>
       {stop.orders.map((order) => (
         <div key={order.id} className="rounded-2xl bg-paper px-3 py-3">
@@ -106,11 +118,85 @@ function StopDetails({
   );
 }
 
+function DeliveryOrderCard({
+  stop,
+  order,
+  canManage,
+  onDeliver,
+  onPay,
+}: {
+  stop: DeliveryRouteStop;
+  order: DeliveryRouteStop['orders'][number];
+  canManage: boolean;
+  onDeliver: () => void;
+  onPay: () => void;
+}) {
+  const delivered = order.status === 'ENTREGADO';
+  const paid = order.paymentStatus === 'PAGADO';
+  const ready = order.status === 'LISTO' || order.status === 'EN_ENTREGA';
+  return (
+    <article className={`rounded-3xl p-4 ${delivered ? 'bg-paper' : 'bg-cream'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-display text-2xl leading-tight">{stop.customerName}</p>
+          <p className="mt-1 text-sm text-ink-soft">{stop.phone}</p>
+          <p className="text-sm text-ink-soft">{stop.address}</p>
+          <p className="mt-2 text-xs text-ink-soft">
+            Pedido #{orderPublicCode(order)} · {ORDER_STATUS_LABEL[order.status]}
+            {order.paymentStatus ? ` · ${PAYMENT_STATUS_LABEL[order.paymentStatus]}` : ''}
+            {stop.geoStatus !== 'LOCATED' ? ' · Sin localizar' : ''}
+          </p>
+        </div>
+        <p className="font-display text-2xl">{formatMoney(order.finalTotal ?? 0)}</p>
+      </div>
+      <ul className="mt-3 space-y-1 text-sm">
+        {order.items.map((item) => (
+          <li key={item.id} className="flex justify-between gap-3">
+            <span className="min-w-0 break-words">
+              {item.productName}
+              {item.unavailableReason ? ` · falta (${item.unavailableReason})` : ''}
+            </span>
+            <span className="shrink-0 font-semibold">
+              {formatQty(item.actualQuantity ?? item.quantity, item.saleUnit)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {stop.phone ? (
+          <WhatsAppButton
+            className="min-h-11 justify-center rounded-2xl bg-paper px-4"
+            phone={stop.phone}
+            message={deliveryWhatsAppMessage(stop.customerName.split(' ')[0] ?? '')}
+            label="Avisar por WhatsApp"
+          />
+        ) : null}
+        {canManage && ready ? (
+          <Button className="min-h-11" onClick={onDeliver}>
+            Marcar como entregado
+          </Button>
+        ) : null}
+        {canManage && delivered && !paid ? (
+          <Button className="min-h-11" variant="secondary" onClick={onPay}>
+            Registrar pago
+          </Button>
+        ) : null}
+        {paid ? <p className="self-center text-sm font-semibold text-ok">Pagado</p> : null}
+      </div>
+    </article>
+  );
+}
+
 export function DeliveryRoutePage() {
   const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const canManageCustomers = hasPermission('customers:manage');
+  const canManageOrders = hasPermission('orders:manage');
   const [weekStart, setWeekStart] = useState<string | undefined>(undefined);
+  const [listFilter, setListFilter] = useState<'pending' | 'delivered'>('pending');
+  const [delivering, setDelivering] = useState<string | null>(null);
+  const [paying, setPaying] = useState<{ orderId: string; amount: string } | null>(null);
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('EFECTIVO');
   const [orderMode, setOrderMode] = useState<'name' | 'nearby'>('name');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editing, setEditing] = useState<DeliveryRouteStop | null>(null);
@@ -126,7 +212,36 @@ export function DeliveryRoutePage() {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['delivery-route'] });
     void queryClient.invalidateQueries({ queryKey: ['customers'] });
+    void queryClient.invalidateQueries({ queryKey: ['orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['payments'] });
   };
+
+  const deliver = useMutation({
+    mutationFn: (orderId: string) => ordersApi.updateStatus(orderId, 'ENTREGADO'),
+    onSuccess: () => {
+      toast.success('Pedido entregado');
+      setDelivering(null);
+      refresh();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const pay = useMutation({
+    mutationFn: () => {
+      if (!paying) throw new Error('Pedido inválido');
+      return paymentsApi.create({
+        orderId: paying.orderId,
+        amount: paying.amount,
+        method: payMethod,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Pago registrado');
+      setPaying(null);
+      refresh();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   const numberedStops = useMemo(() => {
     if (!data) return [];
@@ -211,13 +326,20 @@ export function DeliveryRoutePage() {
   }
 
   const area = data.area;
+  const allStops = [...data.stops, ...data.unlocated];
+  const allOrders = allStops.flatMap((stop) => stop.orders.map((order) => ({ stop, order })));
+  const pendingOrders = allOrders.filter(
+    (row) => row.order.status === 'LISTO' || row.order.status === 'EN_ENTREGA',
+  );
+  const deliveredOrders = allOrders.filter((row) => row.order.status === 'ENTREGADO');
+  const listed = listFilter === 'pending' ? pendingOrders : deliveredOrders;
 
   return (
     <div className="mx-auto min-w-0 max-w-7xl">
       <PageHeader
         eyebrow={data.shortLabel}
         title="Recorrido"
-        description={`Entregas de ${formatDateSlash(data.weekStart, false)} al ${formatDateSlash(data.weekEnd, false)} en ${area.locality}, ${area.region}.`}
+        description={`Pedidos preparados del ciclo ${formatDateSlash(data.weekStart, false)} → ${formatDateSlash(data.weekEnd, false)}. El listado incluye también las direcciones sin localizar.`}
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -326,6 +448,62 @@ export function DeliveryRoutePage() {
       ) : null}
 
       <section className="mt-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-display text-2xl">Pedidos del recorrido</h2>
+            <p className="mt-1 text-sm text-ink-soft">
+              Todos los pedidos preparados de este ciclo, estén o no en el mapa.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-1 rounded-2xl bg-cream p-1">
+            <button
+              type="button"
+              onClick={() => setListFilter('pending')}
+              className={`min-h-11 rounded-xl px-3 text-sm font-semibold ${
+                listFilter === 'pending' ? 'bg-ink text-cream' : 'text-ink'
+              }`}
+            >
+              Pendientes ({pendingOrders.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setListFilter('delivered')}
+              className={`min-h-11 rounded-xl px-3 text-sm font-semibold ${
+                listFilter === 'delivered' ? 'bg-ink text-cream' : 'text-ink'
+              }`}
+            >
+              Entregados ({deliveredOrders.length})
+            </button>
+          </div>
+        </div>
+        {listed.length === 0 ? (
+          <p className="mt-4 rounded-3xl bg-cream px-4 py-5 text-sm text-ink-soft">
+            {listFilter === 'pending'
+              ? 'No hay pedidos preparados pendientes de entrega en este ciclo.'
+              : 'Todavía no hay entregas registradas en este ciclo.'}
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {listed.map(({ stop, order }) => (
+              <DeliveryOrderCard
+                key={order.id}
+                stop={stop}
+                order={order}
+                canManage={canManageOrders}
+                onDeliver={() => setDelivering(order.id)}
+                onPay={() =>
+                  setPaying({
+                    orderId: order.id,
+                    amount: String(order.finalTotal ?? ''),
+                  })
+                }
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8">
         <h2 className="font-display text-2xl">Direcciones sin localizar</h2>
         <p className="mt-1 text-sm text-ink-soft">
           Estos pedidos siguen en el recorrido, pero no se les asignó un punto en el mapa para no enviar el reparto a
@@ -415,6 +593,48 @@ export function DeliveryRoutePage() {
             <p className="text-sm text-ink-soft">
               Si falta la localidad, el sistema completa {area.locality}, {area.region}, {area.country} al buscarla.
             </p>
+          </div>
+        ) : null}
+      </Modal>
+      <ConfirmDialog
+        open={Boolean(delivering)}
+        title="¿Marcar como entregado?"
+        description="El pedido pasa a Entregado. Recién después se puede registrar el pago."
+        confirmLabel="Marcar entregado"
+        loading={deliver.isPending}
+        onClose={() => setDelivering(null)}
+        onConfirm={() => {
+          if (delivering) deliver.mutate(delivering);
+        }}
+      />
+      <Modal
+        open={Boolean(paying)}
+        title="Registrar pago"
+        description="Se usa el módulo de pagos existente. El importe es el total final del pedido."
+        onClose={() => setPaying(null)}
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={() => setPaying(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={pay.isPending || !paying?.amount} onClick={() => pay.mutate()}>
+              {pay.isPending ? 'Registrando...' : 'Confirmar pago'}
+            </Button>
+          </div>
+        }
+      >
+        {paying ? (
+          <div className="space-y-3">
+            <p className="text-sm">Importe: {formatMoney(paying.amount)}</p>
+            <Field label="Método">
+              <Select value={payMethod} onChange={(event) => setPayMethod(event.target.value as PaymentMethod)}>
+                {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           </div>
         ) : null}
       </Modal>

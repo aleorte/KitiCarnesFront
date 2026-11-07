@@ -3,9 +3,9 @@ import { ChevronLeft, ChevronRight, Eye, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ApiError } from '../../api/client';
 import { ordersApi, paymentsApi, productsApi } from '../../api/services';
 import { CreateOrderDialog } from './create-order-dialog';
+import { OrderPrepCard } from './order-prep-card';
 import { StatusBadge } from '../../components/commerce';
 import {
   Button,
@@ -37,7 +37,6 @@ import {
 } from '../../types/api';
 import {
   estimatedLineTotals,
-  formatDate,
   formatDateSlash,
   formatKgDelta,
   formatMoney,
@@ -55,15 +54,6 @@ import { allowedSaleUnits, priceForSaleUnit, unitLabel } from '../../utils/sale-
 
 const WEIGHT_PATTERN = /^\d+(\.\d{1,3})?$/;
 const QUANTITY_PATTERN = /^\d+(\.\d{1,3})?$/;
-
-function missingActualKg(order: Order) {
-  return order.items.filter(
-    (item) =>
-      !item.cancelledAt &&
-      needsWeighing(item) &&
-      (item.actualKg === null || item.actualKg === undefined || item.actualKg === ''),
-  );
-}
 
 function canWeigh(status: OrderStatus) {
   return status === 'EN_PREPARACION' || status === 'LISTO' || status === 'EN_ENTREGA';
@@ -152,20 +142,6 @@ export function OrdersPage() {
     enabled: Boolean(weekStart || cycle.data?.weekStart),
   });
 
-  const statusMutation = useMutation({
-    mutationFn: ({ id, next }: { id: string; next: OrderStatus }) => ordersApi.updateStatus(id, next),
-    onSuccess: () => {
-      toast.success('Estado actualizado');
-      queryClient.invalidateQueries({ queryKey: ['orders'] });
-    },
-    onError: (error: Error, variables) => {
-      toast.error(error.message);
-      if (error instanceof ApiError && error.status === 422) {
-        navigate(`/admin/pedidos/${variables.id}`);
-      }
-    },
-  });
-
   const removeMutation = useMutation({
     mutationFn: (id: string) => ordersApi.remove(id),
     onSuccess: () => {
@@ -181,20 +157,11 @@ export function OrdersPage() {
     return haystack.includes(search.toLowerCase());
   });
 
-  function runStatus(order: Order, next: OrderStatus) {
-    if (next === 'ENTREGADO' && missingActualKg(order).length > 0) {
-      toast.error('Registrá el peso real de cada corte de peso variable antes de entregar');
-      navigate(`/admin/pedidos/${order.id}`);
-      return;
-    }
-    statusMutation.mutate({ id: order.id, next });
-  }
-
   return (
     <div>
       <PageHeader
         title="Pedidos"
-        description="Confirmá, prepará y entregá. El listado sigue el ciclo jueves a miércoles: recepción hasta el miércoles y entrega el jueves siguiente."
+        description="Confirmá y prepará los pedidos del ciclo. Las entregas y los pagos se gestionan en Recorrido."
         actions={
           canManage ? (
             <Button onClick={() => setCreating(true)}>Nuevo pedido</Button>
@@ -245,97 +212,16 @@ export function OrdersPage() {
       {orders.isLoading ? (
         <Skeleton className="h-80" />
       ) : (
-        <>
-          <div className="hidden overflow-hidden rounded-3xl bg-cream md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-paper text-xs uppercase tracking-wider text-ink-soft">
-                <tr>
-                  <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Teléfono</th>
-                  <th className="px-4 py-3">Pedido</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered?.map((order) => {
-                  const primary = ORDER_STATUS_ACTIONS[order.status].find((action) => action.variant === 'primary');
-                  return (
-                    <tr key={order.id} className="border-t border-line">
-                      <td className="px-4 py-3">
-                        <Link to={`/admin/pedidos/${order.id}`} className="font-semibold hover:text-blood">
-                          {customerName(order)}
-                        </Link>
-                        <p className="text-ink-soft">{order.customer?.address}</p>
-                      </td>
-                      <td className="px-4 py-3">{order.customer?.phone}</td>
-                      <td className="px-4 py-3">
-                        <p>#{orderPublicCode(order)}</p>
-                        <p className="text-ink-soft">{formatDate(order.orderedAt)}</p>
-                        <p className="text-xs text-ink-soft">
-                          {order.sourceIp ? 'Mostrador web' : 'Cargado por el equipo'}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={order.status} />
-                        {primary ? (
-                          <button
-                            type="button"
-                            className="mt-1 block text-xs font-semibold text-blood hover:underline disabled:opacity-50"
-                            disabled={statusMutation.isPending}
-                            onClick={() => runStatus(order, primary.to)}
-                          >
-                            {primary.label}
-                          </button>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 text-right">{formatMoney(order.finalTotal ?? order.estimatedTotal)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <OrderActions order={order} onEdit={setEditing} onDelete={setPendingDelete} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="space-y-3 md:hidden">
-            {filtered?.map((order) => {
-              const primary = ORDER_STATUS_ACTIONS[order.status].find((action) => action.variant === 'primary');
-              return (
-                <article key={order.id} className="rounded-3xl bg-cream p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <Link to={`/admin/pedidos/${order.id}`} className="min-w-0">
-                      <p className="font-semibold">{customerName(order)}</p>
-                      <p className="mt-1 text-sm text-ink-soft">{order.customer?.phone}</p>
-                      <p className="text-sm text-ink-soft">{order.customer?.address}</p>
-                      <p className="mt-2">
-                        #{orderPublicCode(order)} · {formatMoney(order.finalTotal ?? order.estimatedTotal)} · {formatDate(order.orderedAt)}
-                      </p>
-                      <p className="text-xs text-ink-soft">
-                        {order.sourceIp ? 'Mostrador web' : 'Cargado por el equipo'}
-                      </p>
-                    </Link>
-                    <StatusBadge status={order.status} />
-                  </div>
-                  {primary ? (
-                    <Button
-                      className="mt-3 w-full"
-                      disabled={statusMutation.isPending}
-                      onClick={() => runStatus(order, primary.to)}
-                    >
-                      {primary.label}
-                    </Button>
-                  ) : null}
-                  <div className="mt-3 flex justify-end">
-                    <OrderActions order={order} onEdit={setEditing} onDelete={setPendingDelete} />
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </>
+        <div className="space-y-4">
+          {filtered?.map((order) => (
+            <OrderPrepCard
+              key={order.id}
+              order={order}
+              canManage={canManage}
+              actions={<OrderActions order={order} onEdit={setEditing} onDelete={setPendingDelete} />}
+            />
+          ))}
+        </div>
       )}
 
       <CreateOrderDialog
@@ -888,7 +774,11 @@ export function OrderDetailPage() {
   }
 
   async function runAction(next: OrderStatus) {
-    if (next === 'ENTREGADO' && kgItems.length) {
+    if (next === 'ENTREGADO') {
+      toast.error('Las entregas se marcan desde Recorrido');
+      return;
+    }
+    if (next === 'LISTO' && kgItems.length) {
       const saved = await saveWeights();
       if (!saved) return;
     }
@@ -1083,10 +973,19 @@ export function OrderDetailPage() {
             )}
             <Button
               className="mt-3 w-full"
-              disabled={data.paymentStatus === 'PAGADO' || data.finalTotal == null || payMutation.isPending}
+              disabled={
+                data.status !== 'ENTREGADO' ||
+                data.paymentStatus === 'PAGADO' ||
+                data.finalTotal == null ||
+                payMutation.isPending
+              }
               onClick={() => payMutation.mutate()}
             >
-              {data.paymentStatus === 'PAGADO' ? 'Pagado' : 'Registrar pago'}
+              {data.paymentStatus === 'PAGADO'
+                ? 'Pagado'
+                : data.status !== 'ENTREGADO'
+                  ? 'El pago se registra después de entregar'
+                  : 'Registrar pago'}
             </Button>
           </div>
         </div>

@@ -160,6 +160,16 @@ export const ordersApi = {
   /** Kilos realmente pesados al preparar el pedido. */
   updateWeights: (id: string, items: Array<{ itemId: string; actualKg: string }>) =>
     api.patch<Order>(`/orders/${id}/actual-weights`, { items }),
+  updatePreparation: (
+    id: string,
+    items: Array<{
+      itemId: string;
+      prepared: boolean;
+      actualQuantity?: string;
+      actualKg?: string;
+      unavailableReason?: string | null;
+    }>,
+  ) => api.patch<Order>(`/orders/${id}/preparation`, { items }),
 };
 
 export const salesApi = {

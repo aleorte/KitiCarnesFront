@@ -1,5 +1,6 @@
 export type Role = 'ADMIN' | 'EMPLEADO';
 export type SaleUnit = 'UNIT' | 'KILOGRAM';
+export type SaleMode = 'UNIT' | 'KILOGRAM' | 'BOTH';
 export type OrderStatus =
   | 'PENDIENTE'
   | 'PENDIENTE_WHATSAPP'
@@ -59,6 +60,9 @@ export type Product = {
   description?: string | null;
   imageUrl?: string | null;
   salePrice: string;
+  salePriceKg?: string | null;
+  salePriceUnit?: string | null;
+  saleMode?: SaleMode;
   saleUnit: SaleUnit;
   /** Rango estimado por pieza. Si está, el cliente pide unidades y se cobra por kg. */
   estimatedMinKg?: string | null;
@@ -455,6 +459,9 @@ export type WeeklyProductSummary = {
   belowMinimum?: boolean;
   cancelledQuantity?: string;
   excluded?: boolean;
+  requestedKg?: string;
+  requestedUnits?: string;
+  orderCount?: number;
   suppliers: WeeklyProductSupplier[];
 };
 
@@ -584,6 +591,7 @@ export type WeeklyOrders = {
   weekEnd: string;
   previousWeekStart: string;
   nextWeekStart: string;
+  deliveryDate?: string;
   isCurrent: boolean;
   label: string;
   shortLabel: string;
@@ -622,6 +630,12 @@ export type WeeklyProductSources = {
     quantity: string;
     isPending: boolean;
   }>;
+};
+
+export const SALE_MODE_LABEL: Record<SaleMode, string> = {
+  KILOGRAM: 'Por kilo',
+  UNIT: 'Por unidad',
+  BOTH: 'Por kilo y por unidad',
 };
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {

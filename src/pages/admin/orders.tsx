@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Pencil, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -33,10 +33,12 @@ import {
   type OrderStatus,
   type PaymentMethod,
   type Product,
+  type SaleUnit,
 } from '../../types/api';
 import {
   estimatedLineTotals,
   formatDate,
+  formatDateSlash,
   formatKgDelta,
   formatMoney,
   formatMoneyRange,
@@ -49,6 +51,7 @@ import {
   buildConfirmedOrderWhatsAppMessage,
   canMessageOrderOnWhatsApp,
 } from '../../utils/order-whatsapp';
+import { allowedSaleUnits, priceForSaleUnit, unitLabel } from '../../utils/sale-mode';
 
 const WEIGHT_PATTERN = /^\d+(\.\d{1,3})?$/;
 const QUANTITY_PATTERN = /^\d+(\.\d{1,3})?$/;
@@ -133,9 +136,20 @@ export function OrdersPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Order | null>(null);
+  const [weekStart, setWeekStart] = useState<string | undefined>(undefined);
+  const cycle = useQuery({
+    queryKey: ['orders-cycle', weekStart],
+    queryFn: () => ordersApi.cycle(weekStart),
+  });
   const orders = useQuery({
-    queryKey: ['orders', status],
-    queryFn: () => ordersApi.list({ status: status || undefined, limit: 50 }),
+    queryKey: ['orders', status, weekStart, cycle.data?.weekStart],
+    queryFn: () =>
+      ordersApi.list({
+        status: status || undefined,
+        weekStart: weekStart ?? cycle.data?.weekStart,
+        limit: 100,
+      }),
+    enabled: Boolean(weekStart || cycle.data?.weekStart),
   });
 
   const statusMutation = useMutation({
@@ -180,13 +194,43 @@ export function OrdersPage() {
     <div>
       <PageHeader
         title="Pedidos"
-        description="Confirmá, prepará y entregá. El peso real se pide solo en cortes de peso variable."
+        description="Confirmá, prepará y entregá. El listado sigue el ciclo jueves a miércoles: recepción hasta el miércoles y entrega el jueves siguiente."
         actions={
           canManage ? (
             <Button onClick={() => setCreating(true)}>Nuevo pedido</Button>
           ) : null
         }
       />
+      {cycle.data ? (
+        <section className="mb-4 rounded-3xl bg-ink p-5 text-cream">
+          <p className="text-xs uppercase tracking-[0.18em] text-gold">
+            {cycle.data.isCurrent ? 'Ciclo actual' : 'Otro ciclo'}
+          </p>
+          <p className="mt-2 font-display text-3xl leading-none">
+            {formatDateSlash(cycle.data.weekStart, false)} → {formatDateSlash(cycle.data.weekEnd, false)}
+          </p>
+          <p className="mt-2 text-sm text-cream/70">
+            Cierre de recepción {formatDateSlash(cycle.data.weekEnd, false)} · Entrega{' '}
+            {formatDateSlash(cycle.data.deliveryDate, false)} · {orders.data?.meta.total ?? 0} pedido(s)
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setWeekStart(cycle.data.previousWeekStart)}>
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
+            <Button
+              variant={cycle.data.isCurrent ? 'primary' : 'secondary'}
+              onClick={() => setWeekStart(undefined)}
+            >
+              Ciclo actual
+            </Button>
+            <Button variant="secondary" onClick={() => setWeekStart(cycle.data.nextWeekStart)}>
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </section>
+      ) : null}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <Input placeholder="Cliente o teléfono" value={search} onChange={(e) => setSearch(e.target.value)} />
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -359,7 +403,9 @@ function draftFromOrder(order: Order): EditDraftItem[] {
   for (const item of order.items) {
     if (item.cancelledAt || !item.productId) continue;
     const quantity = item.saleUnit === 'KILOGRAM' ? (item.requestedKg ?? item.quantity) : item.quantity;
-    const existing = drafts.find((row) => row.productId === item.productId);
+    const existing = drafts.find(
+      (row) => row.productId === item.productId && row.saleUnit === item.saleUnit,
+    );
     if (existing) {
       existing.quantity = String(Number(existing.quantity) + Number(quantity));
       continue;
@@ -390,6 +436,7 @@ function OrderEditDialog({
   const [items, setItems] = useState<EditDraftItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [productId, setProductId] = useState('');
+  const [saleUnit, setSaleUnit] = useState<SaleUnit>('KILOGRAM');
   const [qty, setQty] = useState('1');
   const [confirming, setConfirming] = useState(false);
   const lockedReason = order ? itemsLockedReason(order) : null;
@@ -406,6 +453,7 @@ function OrderEditDialog({
     setItems(draftFromOrder(order));
     setProductSearch('');
     setProductId('');
+    setSaleUnit('KILOGRAM');
     setQty('1');
     setConfirming(false);
   }, [order]);
@@ -422,11 +470,18 @@ function OrderEditDialog({
       .slice(0, 8);
   }, [productSearch, products]);
 
-  const originalIds = useMemo(
-    () => new Set(order ? draftFromOrder(order).map((item) => item.productId) : []),
+  const originalKeys = useMemo(
+    () =>
+      new Set(
+        order
+          ? draftFromOrder(order).map((item) => `${item.productId}:${item.saleUnit}`)
+          : [],
+      ),
     [order],
   );
-  const removedCount = [...originalIds].filter((id) => !items.some((item) => item.productId === id)).length;
+  const removedCount = [...originalKeys].filter(
+    (key) => !items.some((item) => `${item.productId}:${item.saleUnit}` === key),
+  ).length;
 
   const totals = items.reduce(
     (acc, item) => {
@@ -450,36 +505,40 @@ function OrderEditDialog({
       toast.error('Ingresá una cantidad válida');
       return;
     }
-    if (selected.saleUnit === 'UNIT' && !Number.isInteger(quantity)) {
+    const units = allowedSaleUnits(selected);
+    const chosen = units.includes(saleUnit) ? saleUnit : units[0];
+    if (chosen === 'UNIT' && !Number.isInteger(quantity)) {
       toast.error('Para este corte la cantidad tiene que ser un número entero');
       return;
     }
     setItems((current) => {
-      const existing = current.find((item) => item.productId === selected.id);
+      const existing = current.find((item) => item.productId === selected.id && item.saleUnit === chosen);
       if (existing) {
         return current.map((item) =>
-          item.productId === selected.id
+          item.productId === selected.id && item.saleUnit === chosen
             ? { ...item, quantity: String(Number(item.quantity) + quantity) }
             : item,
         );
       }
-      const original = order.items.find((item) => item.productId === selected.id && !item.cancelledAt);
-      const keepSnapshot = original && original.saleUnit === selected.saleUnit;
+      const original = order.items.find(
+        (item) => item.productId === selected.id && item.saleUnit === chosen && !item.cancelledAt,
+      );
+      const keepSnapshot = Boolean(original);
       return [
         ...current,
         {
           productId: selected.id,
-          name: keepSnapshot ? original.productName : selected.name,
-          saleUnit: selected.saleUnit,
-          salePrice: keepSnapshot ? original.unitPrice : selected.salePrice,
+          name: keepSnapshot ? original!.productName : selected.name,
+          saleUnit: chosen,
+          salePrice: keepSnapshot ? original!.unitPrice : priceForSaleUnit(selected, chosen),
           estimatedMinKg: keepSnapshot
-            ? original.estimatedMinKg
-            : selected.saleUnit === 'KILOGRAM'
+            ? original!.estimatedMinKg
+            : chosen === 'KILOGRAM'
               ? null
               : selected.estimatedMinKg,
           estimatedMaxKg: keepSnapshot
-            ? original.estimatedMaxKg
-            : selected.saleUnit === 'KILOGRAM'
+            ? original!.estimatedMaxKg
+            : chosen === 'KILOGRAM'
               ? null
               : selected.estimatedMaxKg,
           quantity: String(quantity),
@@ -514,6 +573,7 @@ function OrderEditDialog({
           : {
               items: items.map((item) => ({
                 productId: item.productId,
+                saleUnit: item.saleUnit,
                 quantity: toDecimalString(Number(item.quantity.replace(',', '.'))),
                 requestedKg:
                   item.saleUnit === 'KILOGRAM'
@@ -581,7 +641,22 @@ function OrderEditDialog({
                     />
                   </Field>
                   <div className="grid grid-cols-[1fr_auto] gap-2">
-                    <Field label={selected?.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
+                    {selected && allowedSaleUnits(selected).length > 1 ? (
+                      <Field label="Modalidad">
+                        <Select
+                          value={saleUnit}
+                          onChange={(event) => setSaleUnit(event.target.value as SaleUnit)}
+                          className="min-h-12"
+                        >
+                          {allowedSaleUnits(selected).map((unit) => (
+                            <option key={unit} value={unit}>
+                              {unit === 'KILOGRAM' ? 'Por kg' : 'Por unidad'}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    ) : null}
+                    <Field label={saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
                       <Input
                         value={qty}
                         inputMode="decimal"
@@ -605,6 +680,7 @@ function OrderEditDialog({
                             onClick={() => {
                               setProductId(product.id);
                               setProductSearch(product.name);
+                              setSaleUnit(allowedSaleUnits(product)[0]);
                             }}
                             className={`min-h-12 w-full rounded-2xl px-3 py-2.5 text-left text-sm transition ${
                               productId === product.id
@@ -614,7 +690,9 @@ function OrderEditDialog({
                           >
                             <span className="font-semibold break-words">{product.name}</span>
                             <span className="mt-0.5 block text-xs opacity-80">
-                              {formatMoney(product.salePrice)} · {product.saleUnit === 'KILOGRAM' ? 'kg' : 'u.'}
+                              {allowedSaleUnits(product)
+                                .map((unit) => `${formatMoney(priceForSaleUnit(product, unit))} / ${unitLabel(unit)}`)
+                                .join(' · ')}
                               {inOrder ? ' · ya está en el pedido' : ''}
                             </span>
                           </button>
@@ -630,7 +708,7 @@ function OrderEditDialog({
                   <ul className="space-y-2 rounded-2xl bg-paper p-3 text-sm">
                     {items.map((item) => (
                       <li
-                        key={item.productId}
+                        key={`${item.productId}:${item.saleUnit}`}
                         className="flex flex-col gap-2 border-b border-line/70 py-3 last:border-b-0"
                       >
                         <span className="min-w-0">
@@ -647,7 +725,7 @@ function OrderEditDialog({
                             onChange={(event) =>
                               setItems((current) =>
                                 current.map((row) =>
-                                  row.productId === item.productId
+                                  row.productId === item.productId && row.saleUnit === item.saleUnit
                                     ? { ...row, quantity: event.target.value }
                                     : row,
                                 ),
@@ -660,7 +738,12 @@ function OrderEditDialog({
                             variant="danger"
                             className="min-h-12 px-4"
                             onClick={() =>
-                              setItems((current) => current.filter((row) => row.productId !== item.productId))
+                              setItems((current) =>
+                                current.filter(
+                                  (row) =>
+                                    !(row.productId === item.productId && row.saleUnit === item.saleUnit),
+                                ),
+                              )
                             }
                           >
                             Quitar

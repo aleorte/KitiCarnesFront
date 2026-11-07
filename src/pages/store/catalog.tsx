@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BRAND_TAGLINE } from '../../brand';
 import { BrandLogo } from '../../components/brand-logo';
@@ -10,8 +10,10 @@ import { useCart } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
 import { cn, isVariableWeight } from '../../utils/format';
 import type { Product } from '../../types/api';
+import { allowedSaleUnits } from '../../utils/sale-mode';
 
 export function CatalogPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const { add } = useCart();
@@ -106,7 +108,12 @@ export function CatalogPage() {
                 product={product}
                 priority={index < 3}
                 onOrder={() => {
-                  add(product, 1);
+                  const units = allowedSaleUnits(product);
+                  if (units.length > 1) {
+                    navigate(`/producto/${product.id}`);
+                    return;
+                  }
+                  add(product, 1, units[0]);
                   toast.success(`${product.name} agregado al pedido`);
                 }}
               />
@@ -134,7 +141,7 @@ function CatalogCard({
   priority: boolean;
   onOrder: () => void;
 }) {
-  const variable = isVariableWeight(product);
+  const variable = isVariableWeight({ ...product, saleUnit: 'UNIT' });
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-3xl border border-gold/40 bg-cream shadow-card">

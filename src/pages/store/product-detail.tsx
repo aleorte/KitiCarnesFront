@@ -8,8 +8,10 @@ import { QuantityDraftInput } from '../../components/quantity-draft-input';
 import { Button, Skeleton } from '../../components/ui';
 import { useCart } from '../../hooks/use-cart';
 import { useStoreCatalog } from '../../hooks/use-store-catalog';
+import type { SaleUnit } from '../../types/api';
 import { formatMoney, formatMoneyRange, estimatedLineTotals, isVariableWeight } from '../../utils/format';
 import { isIntegerQuantity, parseQuantityDraft } from '../../utils/quantity-draft';
+import { allowedSaleUnits, priceForSaleUnit, unitLabel } from '../../utils/sale-mode';
 
 export function ProductDetailPage() {
   const { id = '' } = useParams();
@@ -25,6 +27,8 @@ export function ProductDetailPage() {
   const [qtyText, setQtyText] = useState('1');
   const [qtyError, setQtyError] = useState<string | null>(null);
   const item = cached ?? product.data;
+  const units = item ? allowedSaleUnits(item) : [];
+  const [saleUnit, setSaleUnit] = useState<SaleUnit | null>(null);
   const parsedQty = parseQuantityDraft(qtyText);
   const displayQty = parsedQty ?? 0;
 
@@ -32,9 +36,11 @@ export function ProductDetailPage() {
     return <div className="mx-auto max-w-6xl px-4 py-10"><Skeleton className="h-[480px]" /></div>;
   }
   if (!item) return <p className="p-10">El producto no está disponible.</p>;
-  const isKg = item.saleUnit === 'KILOGRAM';
-  const variable = isVariableWeight(item);
-  const range = estimatedLineTotals({ ...item, quantity: displayQty });
+  const chosen = saleUnit && units.includes(saleUnit) ? saleUnit : units[0];
+  const isKg = chosen === 'KILOGRAM';
+  const variable = !isKg && isVariableWeight({ ...item, saleUnit: chosen });
+  const priced = { ...item, saleUnit: chosen, salePrice: priceForSaleUnit(item, chosen) };
+  const range = estimatedLineTotals({ ...priced, quantity: displayQty });
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-2">
@@ -49,12 +55,32 @@ export function ProductDetailPage() {
         <h1 className="font-display text-5xl">{item.name}</h1>
         <p className="mt-4 max-w-lg text-ink-soft/80">{item.description ?? 'Corte fresco, pesado al momento de preparar el pedido.'}</p>
         <div className="mt-6">
-          <PriceTag product={item} quantity={displayQty || 1} />
+          <PriceTag product={priced} quantity={displayQty || 1} />
         </div>
-        <WeightPriceNotice product={item} quantity={displayQty || 1} />
+        <WeightPriceNotice product={priced} quantity={displayQty || 1} />
         <div className="mt-8 rounded-3xl bg-cream p-5">
+          {units.length > 1 ? (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {units.map((unit) => (
+                <button
+                  key={unit}
+                  type="button"
+                  onClick={() => {
+                    setSaleUnit(unit);
+                    setQtyText(unit === 'KILOGRAM' ? '1' : '1');
+                    setQtyError(null);
+                  }}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                    chosen === unit ? 'bg-ink text-cream' : 'bg-paper'
+                  }`}
+                >
+                  {unit === 'KILOGRAM' ? 'Por kilo' : 'Por unidad'}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft/70">
-            {isKg ? 'Kilos a pedir' : 'Unidades'}
+            {isKg ? 'Cantidad en kg' : 'Cantidad en unidades'}
           </p>
           {variable ? (
             <p className="mt-1 text-sm text-ink-soft">
@@ -103,7 +129,7 @@ export function ProductDetailPage() {
           </div>
           {variable ? (
             <p className="mt-2 text-sm font-medium text-warn">
-              Este importe no es definitivo. El precio final = peso real × {formatMoney(item.salePrice)}/kg.
+              Este importe no es definitivo. El precio final = peso real × {formatMoney(priced.salePrice)}/kg.
             </p>
           ) : null}
           <Button
@@ -118,8 +144,8 @@ export function ProductDetailPage() {
                 setQtyError('Para este corte la cantidad tiene que ser un número entero.');
                 return;
               }
-              add(item, quantity);
-              toast.success(`${item.name} × ${isKg ? `${quantity} kg` : `${quantity} u.`} agregado al pedido`);
+              add(item, quantity, chosen);
+              toast.success(`${item.name} × ${quantity} ${unitLabel(chosen)} agregado al pedido`);
             }}
           >
             Agregar al pedido

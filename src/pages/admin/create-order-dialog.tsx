@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { customersApi, ordersApi, productsApi } from '../../api/services';
 import { Button, Field, Input, Modal, Select, Textarea } from '../../components/ui';
-import type { Customer, Product } from '../../types/api';
+import type { Customer, Product, SaleUnit } from '../../types/api';
+import { allowedSaleUnits, priceForSaleUnit } from '../../utils/sale-mode';
 import { estimatedLineTotals, formatMoneyRange, toDecimalString } from '../../utils/format';
 import { toWhatsAppNumber } from '../../utils/whatsapp';
 
@@ -46,6 +47,7 @@ export function CreateOrderDialog({
     address: '',
   });
   const [productId, setProductId] = useState('');
+  const [saleUnit, setSaleUnit] = useState<SaleUnit>('KILOGRAM');
   const [qty, setQty] = useState('1');
   const [items, setItems] = useState<DraftItem[]>([]);
   const [notes, setNotes] = useState('');
@@ -86,15 +88,17 @@ export function CreateOrderDialog({
       toast.error('Ingresá una cantidad válida');
       return;
     }
-    if (selected.saleUnit === 'UNIT' && !Number.isInteger(quantity)) {
+    const units = allowedSaleUnits(selected);
+    const chosen = units.includes(saleUnit) ? saleUnit : units[0];
+    if (chosen === 'UNIT' && !Number.isInteger(quantity)) {
       toast.error('Para este corte la cantidad tiene que ser un número entero');
       return;
     }
     setItems((current) => {
-      const existing = current.find((item) => item.productId === selected.id);
+      const existing = current.find((item) => item.productId === selected.id && item.saleUnit === chosen);
       if (existing) {
         return current.map((item) =>
-          item.productId === selected.id
+          item.productId === selected.id && item.saleUnit === chosen
             ? { ...item, quantity: String(Number(item.quantity) + quantity) }
             : item,
         );
@@ -104,10 +108,10 @@ export function CreateOrderDialog({
         {
           productId: selected.id,
           name: selected.name,
-          saleUnit: selected.saleUnit,
-          salePrice: selected.salePrice,
-          estimatedMinKg: selected.saleUnit === 'KILOGRAM' ? null : selected.estimatedMinKg,
-          estimatedMaxKg: selected.saleUnit === 'KILOGRAM' ? null : selected.estimatedMaxKg,
+          saleUnit: chosen,
+          salePrice: priceForSaleUnit(selected, chosen),
+          estimatedMinKg: chosen === 'KILOGRAM' ? null : selected.estimatedMinKg,
+          estimatedMaxKg: chosen === 'KILOGRAM' ? null : selected.estimatedMaxKg,
           quantity: String(quantity),
         },
       ];
@@ -147,6 +151,7 @@ export function CreateOrderDialog({
         notes: notes.trim() || undefined,
         items: items.map((item) => ({
           productId: item.productId,
+          saleUnit: item.saleUnit,
           quantity: toDecimalString(Number(item.quantity)),
           requestedKg: item.saleUnit === 'KILOGRAM' ? toDecimalString(Number(item.quantity)) : undefined,
         })),
@@ -238,9 +243,17 @@ export function CreateOrderDialog({
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]">
+        <div className="grid gap-3 sm:grid-cols-[1fr_140px_120px_auto]">
           <Field label="Corte">
-            <Select value={productId} onChange={(event) => setProductId(event.target.value)}>
+            <Select
+              value={productId}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                setProductId(nextId);
+                const next = products.data?.data.find((product) => product.id === nextId);
+                if (next) setSaleUnit(allowedSaleUnits(next)[0]);
+              }}
+            >
               <option value="">Elegí un corte</option>
               {(products.data?.data ?? []).map((product) => (
                 <option key={product.id} value={product.id}>
@@ -249,7 +262,18 @@ export function CreateOrderDialog({
               ))}
             </Select>
           </Field>
-          <Field label={selected?.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
+          {selected && allowedSaleUnits(selected).length > 1 ? (
+            <Field label="Modalidad">
+              <Select value={saleUnit} onChange={(event) => setSaleUnit(event.target.value as SaleUnit)}>
+                {allowedSaleUnits(selected).map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit === 'KILOGRAM' ? 'Por kg' : 'Por unidad'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          <Field label={saleUnit === 'KILOGRAM' ? 'Kilos' : 'Unidades'}>
             <Input value={qty} inputMode="decimal" onChange={(event) => setQty(event.target.value)} />
           </Field>
           <Button type="button" className="self-end" onClick={addItem}>
@@ -260,7 +284,7 @@ export function CreateOrderDialog({
         {items.length > 0 ? (
           <ul className="space-y-2 rounded-2xl bg-paper p-3 text-sm">
             {items.map((item) => (
-              <li key={item.productId} className="flex items-center justify-between gap-3">
+              <li key={`${item.productId}:${item.saleUnit}`} className="flex items-center justify-between gap-3">
                 <span>
                   {item.name}
                   <span className="block text-ink-soft">
@@ -271,7 +295,9 @@ export function CreateOrderDialog({
                   type="button"
                   className="text-blood"
                   onClick={() =>
-                    setItems((current) => current.filter((row) => row.productId !== item.productId))
+                    setItems((current) =>
+                      current.filter((row) => !(row.productId === item.productId && row.saleUnit === item.saleUnit)),
+                    )
                   }
                 >
                   Quitar

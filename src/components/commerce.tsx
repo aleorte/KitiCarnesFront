@@ -1,5 +1,6 @@
 import { Beef } from 'lucide-react';
-import { ORDER_STATUS_LABEL, type OrderStatus, type Product } from '../types/api';
+import { ORDER_STATUS_LABEL, SALE_MODE_LABEL, type OrderStatus, type Product } from '../types/api';
+import { allowedSaleUnits, priceForSaleUnit, productSaleMode } from '../utils/sale-mode';
 import { cn } from '../utils/format';
 import { productImageSrc } from '../utils/product-image';
 import { Badge } from './ui';
@@ -47,23 +48,52 @@ export function PriceTag({
   quantity = 1,
   className = '',
 }: {
-  product: Pick<Product, 'salePrice' | 'saleUnit' | 'estimatedMinKg' | 'estimatedMaxKg'>;
+  product: Pick<Product, 'salePrice' | 'salePriceKg' | 'salePriceUnit' | 'saleMode' | 'saleUnit' | 'estimatedMinKg' | 'estimatedMaxKg'>;
   quantity?: number;
   className?: string;
 }) {
-  const variable = isVariableWeight(product);
-  const pricedByKg = product.saleUnit === 'KILOGRAM' || variable;
-  const range = estimatedLineTotals({ ...product, quantity });
+  const mode = productSaleMode(product);
+  const variable = isVariableWeight({ ...product, saleUnit: 'UNIT' });
+  const units = allowedSaleUnits(product);
+  const range = estimatedLineTotals({
+    ...product,
+    saleUnit: 'UNIT',
+    salePrice: priceForSaleUnit(product, 'KILOGRAM'),
+    quantity,
+  });
 
+  if (mode === 'BOTH') {
+    return (
+      <div className={className}>
+        <p className="font-display text-2xl">{formatMoney(priceForSaleUnit(product, 'KILOGRAM'))}</p>
+        <p className="text-xs uppercase tracking-widest text-ink-soft/70">por kg</p>
+        <p className="mt-1 text-sm font-semibold text-ink">
+          {formatMoney(priceForSaleUnit(product, 'UNIT'))} por unidad
+        </p>
+        {variable ? (
+          <p className="mt-1 text-sm font-semibold text-ink">
+            Estimado por pieza: {formatMoneyRange(range.min, range.max)}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  const pricedByKg = product.saleUnit === 'KILOGRAM' || variable;
   return (
     <div className={className}>
-      <p className="font-display text-2xl">{formatMoney(product.salePrice)}</p>
+      <p className="font-display text-2xl">
+        {formatMoney(priceForSaleUnit(product, pricedByKg ? 'KILOGRAM' : 'UNIT'))}
+      </p>
       <p className="text-xs uppercase tracking-widest text-ink-soft/70">{pricedByKg ? 'por kg' : 'por unidad'}</p>
       {variable ? (
         <p className="mt-1 text-sm font-semibold text-ink">
           Estimado: {formatMoneyRange(range.min, range.max)}
         </p>
       ) : null}
+      {units.length ? null : (
+        <p className="mt-1 text-xs text-ink-soft">{SALE_MODE_LABEL[mode]}</p>
+      )}
     </div>
   );
 }

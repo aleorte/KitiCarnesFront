@@ -8,8 +8,10 @@ import {
   PAYMENT_STATUS_LABEL,
   type PaymentMethod,
   type PaymentStatus,
+  type SaleUnit,
 } from '../../types/api';
 import { formatDateTime, formatMoney, formatQty, isVariableWeight, toDecimalString } from '../../utils/format';
+import { allowedSaleUnits, priceForSaleUnit, unitLabel } from '../../utils/sale-mode';
 
 function billedQty(unit: string, quantity: string, kg?: string | null) {
   if (unit === 'KILOGRAM' || kg) return Number(kg ?? quantity);
@@ -39,6 +41,7 @@ export function SalesPage() {
   });
   const customers = useQuery({ queryKey: ['sale-customers'], queryFn: () => customersApi.list({ limit: 100 }), enabled: open });
   const [productId, setProductId] = useState('');
+  const [saleUnit, setSaleUnit] = useState<SaleUnit>('KILOGRAM');
   const [qty, setQty] = useState('1');
   const [kg, setKg] = useState('');
   const [customerId, setCustomerId] = useState('');
@@ -51,10 +54,15 @@ export function SalesPage() {
     () => products.data?.data.find((product) => product.id === productId),
     [productId, products.data],
   );
-  const variable = selected ? isVariableWeight(selected) : false;
-  const byKg = selected?.saleUnit === 'KILOGRAM' || variable;
+  const chosen = selected
+    ? allowedSaleUnits(selected).includes(saleUnit)
+      ? saleUnit
+      : allowedSaleUnits(selected)[0]
+    : saleUnit;
+  const variable = selected ? isVariableWeight({ ...selected, saleUnit: chosen }) : false;
+  const byKg = chosen === 'KILOGRAM' || variable;
   const billed = byKg ? Number(variable ? kg || qty : qty) : Number(qty);
-  const saleTotal = selected ? billed * Number(selected.salePrice) : 0;
+  const saleTotal = selected ? billed * Number(priceForSaleUnit(selected, chosen)) : 0;
   const costTotal = selected?.lastKnownCost ? billed * Number(selected.lastKnownCost) : null;
   const profit = costTotal === null ? null : saleTotal - costTotal;
   const insufficient = selected ? billed > Number(selected.stock) : false;
@@ -67,6 +75,7 @@ export function SalesPage() {
         items: [
           {
             productId,
+            saleUnit: chosen,
             quantity: toDecimalString(Number(qty)),
             kg: byKg ? toDecimalString(Number(variable ? kg || qty : qty)) : undefined,
           },
@@ -167,8 +176,11 @@ export function SalesPage() {
             <Select
               value={productId}
               onChange={(e) => {
-                setProductId(e.target.value);
+                const nextId = e.target.value;
+                setProductId(nextId);
                 setKg('');
+                const next = products.data?.data.find((product) => product.id === nextId);
+                if (next) setSaleUnit(allowedSaleUnits(next)[0]);
               }}
             >
               <option value="">Elegir</option>
@@ -181,12 +193,25 @@ export function SalesPage() {
           </Field>
           {selected ? (
             <div className="rounded-2xl bg-paper p-3 text-sm">
-              <p>Precio de venta: {formatMoney(selected.salePrice)} {byKg ? '/ kg' : '/ u.'}</p>
+              <p>
+                Precio de venta: {formatMoney(priceForSaleUnit(selected, chosen))} / {unitLabel(chosen)}
+              </p>
               <p>Costo de compra: {selected.lastKnownCost ? `${formatMoney(selected.lastKnownCost)}${byKg ? ' / kg' : ' / u.'}` : 'todavía no hay compra registrada'}</p>
-              <p>Stock disponible: {formatQty(selected.stock, byKg ? 'KILOGRAM' : selected.saleUnit)}</p>
+              <p>Stock disponible: {formatQty(selected.stock, selected.saleUnit)}</p>
             </div>
           ) : null}
-          <Field label={selected?.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Cantidad'}>
+          {selected && allowedSaleUnits(selected).length > 1 ? (
+            <Field label="Modalidad">
+              <Select value={chosen} onChange={(e) => setSaleUnit(e.target.value as SaleUnit)}>
+                {allowedSaleUnits(selected).map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit === 'KILOGRAM' ? 'Por kg' : 'Por unidad'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          <Field label={chosen === 'KILOGRAM' ? 'Kilos' : 'Cantidad'}>
             <Input value={qty} onChange={(e) => setQty(e.target.value)} />
           </Field>
           {variable ? (

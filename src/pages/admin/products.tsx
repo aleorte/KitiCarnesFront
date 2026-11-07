@@ -23,10 +23,11 @@ import { useAuth } from '../../hooks/use-auth';
 import {
   PRODUCT_STATUS_LABEL,
   type Category,
+  SALE_MODE_LABEL,
   type Product,
   type ProductListStatus,
   type ProductUsage,
-  type SaleUnit,
+  type SaleMode,
 } from '../../types/api';
 import { formatMoney, isVariableWeight } from '../../utils/format';
 
@@ -35,8 +36,9 @@ const schema = z
     name: z.string().min(2, 'Ingresá el nombre'),
     description: z.string().optional(),
     imageUrl: z.string().optional(),
-    salePrice: z.string().min(1, 'Ingresá el precio de venta'),
-    saleUnit: z.enum(['UNIT', 'KILOGRAM']),
+    saleMode: z.enum(['UNIT', 'KILOGRAM', 'BOTH']),
+    salePriceKg: z.string().optional(),
+    salePriceUnit: z.string().optional(),
     estimatedMinKg: z.string().optional(),
     estimatedMaxKg: z.string().optional(),
     stock: z.string().min(1, 'Ingresá el stock'),
@@ -45,17 +47,31 @@ const schema = z
   .superRefine((values, ctx) => {
     const min = values.estimatedMinKg?.trim() ?? '';
     const max = values.estimatedMaxKg?.trim() ?? '';
-    if (values.saleUnit === 'KILOGRAM') {
-      if (min || max) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['estimatedMinKg'],
-          message: 'Los productos por kilo no usan peso estimado',
-        });
-      }
-      return;
+    const allowsKg = values.saleMode === 'KILOGRAM' || values.saleMode === 'BOTH';
+    const allowsUnit = values.saleMode === 'UNIT' || values.saleMode === 'BOTH';
+    const variable = Boolean(min && max);
+    if (allowsKg && !values.salePriceKg?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['salePriceKg'],
+        message: 'Ingresá el precio por kg',
+      });
     }
-    if (Boolean(min) !== Boolean(max)) {
+    if (allowsUnit && !variable && !values.salePriceUnit?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['salePriceUnit'],
+        message: 'Ingresá el precio por unidad',
+      });
+    }
+    if (values.saleMode === 'KILOGRAM' && (min || max)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['estimatedMinKg'],
+        message: 'Los productos solo por kilo no usan peso estimado',
+      });
+    }
+    if (allowsUnit && Boolean(min) !== Boolean(max)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [min ? 'estimatedMaxKg' : 'estimatedMinKg'],
@@ -148,10 +164,13 @@ export function ProductsPage() {
           : editing
             ? null
             : undefined,
+        saleMode: values.saleMode,
+        salePriceKg: values.salePriceKg || undefined,
+        salePriceUnit: values.salePriceUnit || undefined,
         estimatedMinKg:
-          values.saleUnit === 'UNIT' && values.estimatedMinKg ? values.estimatedMinKg : null,
+          values.saleMode !== 'KILOGRAM' && values.estimatedMinKg ? values.estimatedMinKg : null,
         estimatedMaxKg:
-          values.saleUnit === 'UNIT' && values.estimatedMaxKg ? values.estimatedMaxKg : null,
+          values.saleMode !== 'KILOGRAM' && values.estimatedMaxKg ? values.estimatedMaxKg : null,
         categoryId: values.categoryId || null,
       };
       return editing ? productsApi.update(editing.id, payload) : productsApi.create(payload);
@@ -202,10 +221,11 @@ export function ProductsPage() {
       name: product?.name ?? '',
       description: product?.description ?? '',
       imageUrl: product?.imageUrl ?? '',
-      salePrice: product?.salePrice ?? '',
-      saleUnit: (product?.saleUnit ?? 'KILOGRAM') as SaleUnit,
-      estimatedMinKg: product?.saleUnit === 'UNIT' ? (product.estimatedMinKg ?? '') : '',
-      estimatedMaxKg: product?.saleUnit === 'UNIT' ? (product.estimatedMaxKg ?? '') : '',
+      saleMode: (product?.saleMode ?? (product?.saleUnit === 'UNIT' ? 'UNIT' : 'KILOGRAM')) as SaleMode,
+      salePriceKg: product?.salePriceKg ?? (product?.saleUnit === 'KILOGRAM' || isVariableWeight(product ?? { saleUnit: 'KILOGRAM' }) ? product?.salePrice ?? '' : ''),
+      salePriceUnit: product?.salePriceUnit ?? (product?.saleUnit === 'UNIT' && !isVariableWeight(product) ? product?.salePrice ?? '' : ''),
+      estimatedMinKg: product?.saleMode === 'KILOGRAM' ? '' : (product?.estimatedMinKg ?? ''),
+      estimatedMaxKg: product?.saleMode === 'KILOGRAM' ? '' : (product?.estimatedMaxKg ?? ''),
       stock: product?.stock ?? '0',
       categoryId: product?.categoryId ?? '',
     });
@@ -306,8 +326,10 @@ export function ProductsPage() {
                     </Badge>
                   </div>
                   <p className="text-sm text-ink-soft">
-                    {product.saleUnit === 'KILOGRAM' || isVariableWeight(product) ? 'Por kg' : 'Por unidad'}{' '}
-                    · {formatMoney(product.salePrice)}
+                    {SALE_MODE_LABEL[product.saleMode ?? (product.saleUnit === 'UNIT' ? 'UNIT' : 'KILOGRAM')]}
+                    {product.salePriceKg ? ` · ${formatMoney(product.salePriceKg)} / kg` : ''}
+                    {product.salePriceUnit ? ` · ${formatMoney(product.salePriceUnit)} / u.` : ''}
+                    {!product.salePriceKg && !product.salePriceUnit ? ` · ${formatMoney(product.salePrice)}` : ''}
                   </p>
                   {isVariableWeight(product) ? (
                     <p className="text-sm font-medium text-warn">
@@ -414,12 +436,9 @@ export function ProductsPage() {
             ) : null}
           </Field>
           <input type="hidden" {...form.register('imageUrl')} />
-          <Field label="Precio de venta por kg o unidad" error={form.formState.errors.salePrice?.message}>
-            <Input {...form.register('salePrice')} />
-          </Field>
-          <Field label="Unidad">
+          <Field label="Modalidad de venta">
             <Select
-              {...form.register('saleUnit', {
+              {...form.register('saleMode', {
                 onChange: (event) => {
                   if (event.target.value === 'KILOGRAM') {
                     form.setValue('estimatedMinKg', '', { shouldDirty: true, shouldValidate: true });
@@ -428,15 +447,30 @@ export function ProductsPage() {
                 },
               })}
             >
-              <option value="KILOGRAM">Por kilo (el cliente pide kg)</option>
-              <option value="UNIT">Por unidad (pieza o elaborado)</option>
+              <option value="KILOGRAM">Por kilo</option>
+              <option value="UNIT">Por unidad</option>
+              <option value="BOTH">Por kilo y por unidad</option>
             </Select>
           </Field>
-          {form.watch('saleUnit') === 'UNIT' ? (
+          {form.watch('saleMode') !== 'UNIT' ? (
+            <Field label="Precio por kg" error={form.formState.errors.salePriceKg?.message}>
+              <Input {...form.register('salePriceKg')} />
+            </Field>
+          ) : null}
+          {form.watch('saleMode') !== 'KILOGRAM' ? (
+            <Field
+              label="Precio por unidad"
+              hint="Si el corte se pesa al entregar, se cobra el precio por kg y este campo no hace falta."
+              error={form.formState.errors.salePriceUnit?.message}
+            >
+              <Input {...form.register('salePriceUnit')} />
+            </Field>
+          ) : null}
+          {form.watch('saleMode') !== 'KILOGRAM' ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field
                 label="Peso estimado mínimo (kg)"
-                hint="Solo para piezas: el cliente pide 1 unidad, no este peso."
+                hint="Solo para piezas: el cliente pide unidades, no este peso."
                 error={form.formState.errors.estimatedMinKg?.message}
               >
                 <Input {...form.register('estimatedMinKg')} placeholder="Ej: 2" />
@@ -450,7 +484,7 @@ export function ProductsPage() {
             </div>
           ) : (
             <p className="text-sm text-ink-soft">
-              Por kilo no se usa peso estimado: el cliente indica los kilos al pedir. Si este corte tenía un rango, se elimina al guardar.
+              Por kilo no se usa peso estimado: el cliente indica los kilos al pedir.
             </p>
           )}
           <Field label="Stock" error={form.formState.errors.stock?.message}>

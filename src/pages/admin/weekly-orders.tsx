@@ -126,19 +126,37 @@ function WeeklyCustomerDetail({ groups }: { groups: WeeklyCustomerGroup[] }) {
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (!term) return groups;
-    return groups.filter((group) => {
-      const haystack = [
-        group.customerName,
-        group.firstName,
-        group.lastName,
-        group.phone,
-        ...group.orders.map((order) => order.trackingCode ?? order.id),
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(term);
-    });
+    if (!term) {
+      return groups.map((group) => ({
+        group,
+        matchedProducts: [] as string[],
+        customerHit: false,
+      }));
+    }
+    return groups
+      .map((group) => {
+        const customerHit = [group.customerName, group.firstName, group.lastName, group.phone]
+          .join(' ')
+          .toLowerCase()
+          .includes(term);
+        const matchedProducts = [
+          ...new Set(
+            group.orders.flatMap((order) =>
+              order.items
+                .filter((item) => item.productName.toLowerCase().includes(term))
+                .map((item) => item.productName),
+            ),
+          ),
+        ];
+        if (!customerHit && matchedProducts.length === 0) return null;
+        return { group, matchedProducts, customerHit };
+      })
+      .filter(
+        (
+          row,
+        ): row is { group: WeeklyCustomerGroup; matchedProducts: string[]; customerHit: boolean } =>
+          Boolean(row),
+      );
   }, [groups, term]);
 
   return (
@@ -148,25 +166,32 @@ function WeeklyCustomerDetail({ groups }: { groups: WeeklyCustomerGroup[] }) {
         <p className="mt-1 text-sm text-ink-soft">
           {groups.length} cliente(s) con pedidos esta semana. Los productos de cada uno están visibles, sin desplegar.
         </p>
-        <label className="relative mt-4 block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar cliente..."
-            className="min-h-12 pl-10"
-          />
-        </label>
+        <div className="mt-4 flex gap-2">
+          <label className="relative block min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar cliente o producto..."
+              className="min-h-12 pl-10"
+            />
+          </label>
+          {search ? (
+            <Button type="button" variant="ghost" className="min-h-12 shrink-0" onClick={() => setSearch('')}>
+              Limpiar
+            </Button>
+          ) : null}
+        </div>
       </div>
       {filtered.length === 0 ? (
         <p className="px-1 py-8 text-sm text-ink-soft">
           {groups.length === 0
             ? 'No hay pedidos de clientes en esta semana.'
-            : 'Ningún cliente coincide con la búsqueda.'}
+            : 'Ningún cliente o producto coincide con la búsqueda.'}
         </p>
       ) : (
         <div className="mt-3 space-y-3 pb-6">
-          {filtered.map((group) => (
+          {filtered.map(({ group, matchedProducts, customerHit }) => (
             <article key={group.customerId} className="min-w-0 rounded-3xl bg-cream px-4 py-4 sm:px-5">
               <header className="mb-3">
                 <h3 className="font-display text-xl leading-tight break-words">{group.customerName}</h3>
@@ -174,23 +199,45 @@ function WeeklyCustomerDetail({ groups }: { groups: WeeklyCustomerGroup[] }) {
                   {group.orders.length} pedido(s)
                   {group.phone ? ` · ${group.phone}` : ''}
                 </p>
+                {matchedProducts.length ? (
+                  <p className="mt-1 text-xs font-semibold text-blood">
+                    Coincide: {matchedProducts.join(', ')}
+                  </p>
+                ) : null}
               </header>
               <div className="space-y-4">
-                {group.orders.map((order) => (
+                {group.orders
+                  .filter(
+                    (order) =>
+                      customerHit ||
+                      !term ||
+                      order.items.some((item) => item.productName.toLowerCase().includes(term)),
+                  )
+                  .map((order) => (
                   <div key={order.id} className="min-w-0">
                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
                       Pedido #{order.trackingCode ?? order.id.slice(0, 8)} · {order.weekday}
                       {order.status !== 'CONFIRMADO' ? ` · ${ORDER_STATUS_LABEL[order.status]}` : ''}
                     </p>
                     <ul className="space-y-2 text-sm">
-                      {order.items.map((item) => (
-                        <li key={item.id} className="flex items-start justify-between gap-3">
+                      {order.items
+                        .filter(
+                          (item) =>
+                            customerHit ||
+                            !term ||
+                            item.productName.toLowerCase().includes(term),
+                        )
+                        .map((item) => {
+                        const hit = Boolean(term) && item.productName.toLowerCase().includes(term);
+                        return (
+                        <li key={item.id} className={`flex items-start justify-between gap-3 ${hit ? 'rounded-xl bg-gold/20 px-2 py-1' : ''}`}>
                           <span className="min-w-0 break-words">{item.productName}</span>
                           <span className="shrink-0 font-semibold tabular-nums">
                             {formatQty(item.requestedQuantity, item.saleUnit)}
                           </span>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}
@@ -594,7 +641,7 @@ export function WeeklyOrdersPage() {
         <PageHeader
           eyebrow={data.isCurrent ? 'Semana actual' : 'Otra semana'}
           title="Pedidos semanales"
-        description={`${data.shortLabel ?? data.label}. Del jueves al miércoles: la demanda activa es lo que hay que cubrir con el pedido a proveedores.`}
+        description={`${data.shortLabel ?? data.label}. Recepción hasta el miércoles. Entrega el jueves ${data.deliveryDate ? formatDateSlash(data.deliveryDate, false) : ''}.`}
         actions={
           <Button variant="danger" onClick={() => setResettingWeek(true)}>
             Resetear pedido semanal
@@ -636,6 +683,9 @@ export function WeeklyOrdersPage() {
           {formatDateSlash(data.weekStart, false)} → {formatDateSlash(data.weekEnd, false)}
         </p>
         <p className="mt-3 text-sm text-cream/70">
+          Cierre {formatDateSlash(data.weekEnd, false)}
+          {data.deliveryDate ? ` · Entrega ${formatDateSlash(data.deliveryDate, false)}` : ''}
+          {' · '}
           {data.summary.orders} pedido(s) · {data.summary.customers} cliente(s) · {data.summary.pending} pendiente(s)
         </p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
@@ -689,7 +739,45 @@ export function WeeklyOrdersPage() {
         <>
           <section className="mt-6 overflow-hidden rounded-3xl bg-cream">
             <div className="border-b border-line px-5 py-4">
-              <h2 className="font-display text-2xl">Demanda semanal y pedido a proveedores</h2>
+              <h2 className="font-display text-2xl">Consolidado de la semana</h2>
+              <p className="mt-1 text-sm text-ink-soft">
+                Total pedido por producto. Los kilos y las unidades no se mezclan.
+              </p>
+            </div>
+            <div className="overflow-x-auto px-2 pb-3 md:px-5">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[11px] uppercase tracking-[0.14em] text-ink-soft">
+                  <tr>
+                    <th className="px-2 py-3 font-medium">Producto</th>
+                    <th className="px-2 py-3 font-medium">Cantidad total solicitada</th>
+                    <th className="px-2 py-3 font-medium">Pedidos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {products.map((product) => {
+                    const kg = Number(product.requestedKg ?? 0);
+                    const units = Number(product.requestedUnits ?? 0);
+                    const parts = [
+                      kg > 0 ? formatQty(product.requestedKg ?? '0', 'KILOGRAM') : null,
+                      units > 0 ? formatQty(product.requestedUnits ?? '0', 'UNIT') : null,
+                    ].filter(Boolean);
+                    return (
+                      <tr key={product.productId} className="border-t border-line">
+                        <td className="px-2 py-3 font-semibold">{product.productName}</td>
+                        <td className="px-2 py-3 tabular-nums">
+                          {parts.length ? parts.join(' / ') : formatQty(product.totalQuantity, product.saleUnit)}
+                        </td>
+                        <td className="px-2 py-3 tabular-nums">{product.orderCount ?? 0}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section className="mt-6 overflow-hidden rounded-3xl bg-cream">
+            <div className="border-b border-line px-5 py-4">
+              <h2 className="font-display text-2xl">Pedido a proveedores</h2>
               <p className="mt-1 text-sm text-ink-soft">
                 Asigná un proveedor a cada corte. Se compra el mínimo de ese proveedor. El sobrante estimado es
                 mínimo − demanda, nunca negativo.

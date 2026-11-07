@@ -135,9 +135,22 @@ export const customersApi = {
   history: (id: string) => api.get<{ orders: Order[]; sales: Sale[] }>(`/customers/${id}/history`),
 };
 
+export type OrderCycle = {
+  weekStart: string;
+  weekEnd: string;
+  previousWeekStart: string;
+  nextWeekStart: string;
+  deliveryDate: string;
+  isCurrent: boolean;
+  label: string;
+  shortLabel: string;
+};
+
 export const ordersApi = {
   list: (params: Record<string, string | number | undefined> = {}) =>
     api.get<Paginated<Order>>(`/orders${toQuery(params)}`),
+  cycle: (weekStart?: string) =>
+    api.get<OrderCycle>(`/orders/cycle${toQuery({ weekStart })}`),
   one: (id: string) => api.get<Order>(`/orders/${id}`),
   create: (body: Record<string, unknown>) => api.post<Order>('/orders', body),
   update: (id: string, body: Record<string, unknown>) => api.patch<Order>(`/orders/${id}`, body),

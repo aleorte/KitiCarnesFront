@@ -73,6 +73,7 @@ export function CheckoutPage() {
         notes: values.notes,
         items: items.map((item) => ({
           productId: item.productId,
+          saleUnit: item.saleUnit,
           quantity: toDecimalString(item.quantity),
           requestedKg: item.saleUnit === 'KILOGRAM' ? toDecimalString(item.quantity) : undefined,
         })),

@@ -1,4 +1,4 @@
-import type { Order, OrderItem } from '../types/api';
+import type { Order, OrderItem, SaleUnit } from '../types/api';
 import {
   formatEstimatedKgRange,
   formatMoney,
@@ -75,6 +75,83 @@ export function buildConfirmedOrderWhatsAppMessage(order: Order): string {
   }
 
   lines.push('', 'Muchas gracias.', 'Rinde Más Carnes');
+  return lines.join('\n');
+}
+
+type DeliveryInvoiceOrder = {
+  id: string;
+  trackingCode?: string | null;
+  finalTotal?: string | number | null;
+  items: Array<{
+    productName: string;
+    saleUnit: SaleUnit;
+    quantity: string;
+    actualQuantity?: string | null;
+    unitPrice?: string | number | null;
+    unavailableReason?: string | null;
+    lineTotal?: string | number | null;
+  }>;
+};
+
+function lineSubtotal(item: DeliveryInvoiceOrder['items'][number]): number | null {
+  if (item.lineTotal != null && item.lineTotal !== '') {
+    const amount = Number(item.lineTotal);
+    return Number.isFinite(amount) ? amount : null;
+  }
+  const qty = Number(item.actualQuantity ?? item.quantity);
+  const price = Number(item.unitPrice);
+  if (!Number.isFinite(qty) || !Number.isFinite(price)) return null;
+  return qty * price;
+}
+
+function deliveryItemBlock(item: DeliveryInvoiceOrder['items'][number]): string[] {
+  const qty = formatQty(item.actualQuantity ?? item.quantity, item.saleUnit);
+  if (item.unavailableReason?.trim()) {
+    return [`❌ ${item.productName} — no se pudo incluir (${item.unavailableReason.trim()})`];
+  }
+  const subtotal = lineSubtotal(item);
+  const qtyLabel = item.saleUnit === 'KILOGRAM' ? 'Kilos' : 'Cantidad';
+  const lines = [`🥩 ${item.productName}`, `${qtyLabel}: ${qty}`];
+  if (subtotal != null) {
+    lines.push(`Subtotal: ${formatMoney(subtotal)}`);
+  }
+  return lines;
+}
+
+export function buildDeliveryWhatsAppMessage(
+  customerName: string,
+  orders: DeliveryInvoiceOrder[],
+): string {
+  const firstName = customerName.trim().split(/\s+/)[0] || 'hola';
+  const lines: string[] = [
+    `Hola ${firstName} 👋`,
+    '',
+    'Somos Rinde Más Carnes 🥩',
+    'Estamos por llegar con tu pedido 🚚',
+    '',
+  ];
+
+  const billable = orders.length ? orders : [];
+  billable.forEach((order, index) => {
+    if (billable.length > 1) {
+      lines.push(`📦 Pedido ${index + 1} · #${orderPublicCode(order)}`);
+    } else {
+      lines.push(`📦 Pedido #${orderPublicCode(order)}`);
+    }
+    lines.push('🧾 Detalle:');
+    lines.push('');
+    for (const item of order.items) {
+      lines.push(...deliveryItemBlock(item), '');
+    }
+    const billed = order.items.filter((item) => !item.unavailableReason?.trim());
+    const summed = billed.reduce((acc, item) => acc + (lineSubtotal(item) ?? 0), 0);
+    const total = order.finalTotal != null && order.finalTotal !== '' ? Number(order.finalTotal) : summed;
+    lines.push(`💰 Total a pagar: ${formatMoney(Number.isFinite(total) ? total : summed)}`);
+    lines.push('');
+  });
+
+  lines.push('¡Gracias por elegirnos! ❤️');
+  lines.push('Rinde Más Carnes');
   return lines.join('\n');
 }
 

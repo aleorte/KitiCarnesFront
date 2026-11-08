@@ -537,6 +537,7 @@ export type DeliveryRouteStop = {
       saleUnit: SaleUnit;
       quantity: string;
       actualQuantity?: string;
+      unitPrice?: string | null;
       unavailableReason?: string | null;
       prepared?: boolean;
       lineTotal?: string | null;

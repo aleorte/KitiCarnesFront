@@ -26,7 +26,7 @@ import {
   type PaymentMethod,
 } from '../../types/api';
 import { formatDateSlash, formatMoney, formatQty, orderPublicCode } from '../../utils/format';
-import { deliveryWhatsAppMessage } from '../../utils/order-prep';
+import { buildDeliveryWhatsAppMessage } from '../../utils/order-whatsapp';
 import { DeliveryMap, type MapGroup } from './delivery-map';
 
 function mapsSearchUrl(address: string, locality: string, region: string, country: string) {
@@ -86,7 +86,7 @@ function StopDetails({
         {stop.phone ? (
           <WhatsAppButton
             phone={stop.phone}
-            message={deliveryWhatsAppMessage(stop.customerName.split(' ')[0] ?? '')}
+            message={buildDeliveryWhatsAppMessage(stop.customerName, stop.orders)}
             label="Avisar entrega"
           />
         ) : null}
@@ -170,7 +170,7 @@ function DeliveryOrderCard({
           <WhatsAppButton
             className="min-h-11 justify-center rounded-2xl bg-paper px-4"
             phone={stop.phone}
-            message={deliveryWhatsAppMessage(stop.customerName.split(' ')[0] ?? '')}
+            message={buildDeliveryWhatsAppMessage(stop.customerName, [order])}
             label="Avisar por WhatsApp"
           />
         ) : null}

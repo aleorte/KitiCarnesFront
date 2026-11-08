@@ -30,7 +30,3 @@ export function needsRealWeight(item: OrderItem): boolean {
   return needsWeighing(item) || item.saleUnit === 'KILOGRAM';
 }
 
-export function deliveryWhatsAppMessage(firstName: string): string {
-  const name = firstName.trim() || 'hola';
-  return `¡Hola, ${name}! Somos de Rinde Más Carnes. Te avisamos que estamos por realizar la entrega de tu pedido. ¡Muchas gracias por tu compra!`;
-}

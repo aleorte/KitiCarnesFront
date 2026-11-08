@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, MapPinned, Navigation } from '
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { ApiError } from '../../api/client';
 import { customersApi, deliveryRouteApi, ordersApi, paymentsApi } from '../../api/services';
 import { WhatsAppButton } from '../../components/whatsapp-button';
 import {
@@ -122,12 +123,14 @@ function DeliveryOrderCard({
   stop,
   order,
   canManage,
+  delivering,
   onDeliver,
   onPay,
 }: {
   stop: DeliveryRouteStop;
   order: DeliveryRouteStop['orders'][number];
   canManage: boolean;
+  delivering: boolean;
   onDeliver: () => void;
   onPay: () => void;
 }) {
@@ -172,8 +175,8 @@ function DeliveryOrderCard({
           />
         ) : null}
         {canManage && ready ? (
-          <Button className="min-h-11" onClick={onDeliver}>
-            Marcar como entregado
+          <Button className="min-h-11" disabled={delivering} onClick={onDeliver}>
+            {delivering ? 'Registrando...' : 'Marcar como entregado'}
           </Button>
         ) : null}
         {canManage && delivered && !paid ? (
@@ -223,7 +226,14 @@ export function DeliveryRoutePage() {
       setDelivering(null);
       refresh();
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => {
+      const status = error instanceof ApiError ? error.status : undefined;
+      console.warn('No se pudo marcar el pedido como entregado', {
+        status,
+        message: error.message,
+      });
+      toast.error(error.message || 'No se pudo marcar el pedido como entregado');
+    },
   });
 
   const pay = useMutation({
@@ -490,6 +500,7 @@ export function DeliveryRoutePage() {
                 stop={stop}
                 order={order}
                 canManage={canManageOrders}
+                delivering={deliver.isPending && delivering === order.id}
                 onDeliver={() => setDelivering(order.id)}
                 onPay={() =>
                   setPaying({
@@ -602,9 +613,11 @@ export function DeliveryRoutePage() {
         description="El pedido pasa a Entregado. Recién después se puede registrar el pago."
         confirmLabel="Marcar entregado"
         loading={deliver.isPending}
-        onClose={() => setDelivering(null)}
+        onClose={() => {
+          if (!deliver.isPending) setDelivering(null);
+        }}
         onConfirm={() => {
-          if (delivering) deliver.mutate(delivering);
+          if (delivering && !deliver.isPending) deliver.mutate(delivering);
         }}
       />
       <Modal

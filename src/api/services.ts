@@ -274,6 +274,11 @@ export const dashboardApi = {
       `/dashboard/sales-evolution${toQuery({ granularity })}`,
     ),
   topProducts: () => api.get<DashboardOverview['topProducts']>('/dashboard/top-products'),
+  adjustTreasury: (body: {
+    indicator: 'CAJA' | 'EFECTIVO' | 'CUENTA_CORRIENTE';
+    newValue: string;
+    reason: string;
+  }) => api.post<DashboardOverview['treasury']>('/dashboard/treasury/adjustments', body),
 };
 
 export type WholesaleItemInput = {

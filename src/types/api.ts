@@ -387,6 +387,15 @@ export const EXPENSE_STATUS_LABEL: Record<ExpenseReimbursementStatus, string> = 
   REINTEGRADO: 'Reintegrado',
 };
 
+export type TreasuryIndicatorKey = 'CAJA' | 'EFECTIVO' | 'CUENTA_CORRIENTE';
+
+export type TreasuryIndicator = {
+  calculated: string;
+  adjustments: string;
+  value: string;
+  description: string;
+};
+
 export type DashboardOverview = {
   timezone: string;
   sales: {
@@ -402,6 +411,11 @@ export type DashboardOverview = {
     orders: number;
     independentSales: number;
     outstandingAmount: string;
+  };
+  treasury: {
+    caja: TreasuryIndicator;
+    efectivo: TreasuryIndicator;
+    cuentaCorriente: TreasuryIndicator;
   };
   topProducts: Array<{
     productId: string;

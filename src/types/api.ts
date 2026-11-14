@@ -287,7 +287,22 @@ export type PurchaseSummary = {
   totalCost: string;
   paidAmount: string;
   pendingAmount: string;
+  outstandingTotal?: string;
+  paidThisWeek?: {
+    efectivo: string;
+    transferencia: string;
+    tarjeta: string;
+    otro: string;
+    total: string;
+  };
   count: number;
+  weekStart?: string;
+  weekEnd?: string;
+  previousWeekStart?: string;
+  nextWeekStart?: string;
+  isCurrent?: boolean;
+  label?: string;
+  shortLabel?: string;
 };
 
 export const PURCHASE_PAY_STATUS_LABEL: Record<PurchasePayStatus, string> = {

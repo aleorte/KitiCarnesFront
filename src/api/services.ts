@@ -135,6 +135,14 @@ export const customersApi = {
   history: (id: string) => api.get<{ orders: Order[]; sales: Sale[] }>(`/customers/${id}/history`),
 };
 
+export type CollectedByMethod = {
+  efectivo: string;
+  transferencia: string;
+  tarjeta: string;
+  otro: string;
+  total: string;
+};
+
 export type OrderCycle = {
   weekStart: string;
   weekEnd: string;
@@ -144,6 +152,7 @@ export type OrderCycle = {
   isCurrent: boolean;
   label: string;
   shortLabel: string;
+  collected?: CollectedByMethod;
 };
 
 export const ordersApi = {

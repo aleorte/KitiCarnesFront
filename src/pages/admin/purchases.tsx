@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { productsApi, purchasesApi, suppliersApi } from '../../api/services';
@@ -24,7 +25,7 @@ import {
   type PurchaseDocument,
   type PurchasePayStatus,
 } from '../../types/api';
-import { dateOnly, formatDate, formatMoney, formatQty } from '../../utils/format';
+import { dateOnly, formatDate, formatDateSlash, formatMoney, formatQty } from '../../utils/format';
 
 type DraftItem = {
   key: string;
@@ -71,32 +72,12 @@ function lineTotal(quantity: string, unitCost: string) {
   return qty * cost;
 }
 
-function addDays(iso: string, days: number) {
-  const [year, month, day] = iso.split('-').map(Number);
-  const utc = new Date(Date.UTC(year, month - 1, day + days));
-  return utc.toISOString().slice(0, 10);
-}
-
-function businessWeekRange(today = dateOnly()) {
-  const [year, month, day] = today.split('-').map(Number);
-  const utc = new Date(Date.UTC(year, month - 1, day));
-  const from = addDays(today, -((utc.getUTCDay() + 3) % 7));
-  return { from, to: addDays(from, 6) };
-}
-
-function monthRange(today = new Date()) {
-  const from = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  return { from, to: dateOnly(last) };
-}
-
 export function PurchasesPage() {
   const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const canManage = hasPermission('purchases:manage');
   const [search, setSearch] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [weekStart, setWeekStart] = useState<string | undefined>(undefined);
   const [supplierFilter, setSupplierFilter] = useState('');
   const [productFilter, setProductFilter] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('');
@@ -128,8 +109,7 @@ export function PurchasesPage() {
 
   const filters = {
     search: search || undefined,
-    from: from || undefined,
-    to: to || undefined,
+    weekStart,
     supplierId: supplierFilter || undefined,
     productId: productFilter || undefined,
     paymentStatus: paymentStatus || undefined,
@@ -347,8 +327,9 @@ export function PurchasesPage() {
   return (
     <div>
       <PageHeader
+        eyebrow={summary.data?.isCurrent ? 'Semana actual' : summary.data ? 'Otra semana' : undefined}
         title="Pedidos a proveedores"
-        description="Compras de mercadería: habituales o extraordinarias. No se mezclan con los gastos operativos ni entran solas al stock."
+        description="Compras de mercadería del ciclo jueves a miércoles, igual que los pedidos semanales. No se mezclan con los gastos operativos ni entran solas al stock."
         actions={
           canManage ? (
             <Button
@@ -364,25 +345,78 @@ export function PurchasesPage() {
         }
       />
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-3">
+      {summary.data?.weekStart ? (
+        <>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setWeekStart(summary.data.previousWeekStart)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Anterior
+              </Button>
+              <Button
+                variant={summary.data.isCurrent ? 'primary' : 'secondary'}
+                onClick={() => setWeekStart(undefined)}
+              >
+                Semana actual
+              </Button>
+              <Button variant="secondary" onClick={() => setWeekStart(summary.data.nextWeekStart)}>
+                Siguiente
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <label className="sm:ml-auto">
+              <span className="sr-only">Elegir fecha</span>
+              <Input
+                type="date"
+                value={summary.data.weekStart}
+                onChange={(event) => setWeekStart(event.target.value || undefined)}
+                className="max-w-48"
+              />
+            </label>
+          </div>
+          <section className="mb-6 rounded-3xl bg-ink p-6 text-cream">
+            <p className="text-xs uppercase tracking-[0.18em] text-gold">
+              {summary.data.shortLabel ?? (summary.data.isCurrent ? 'Ciclo actual' : 'Otro ciclo')}
+            </p>
+            <p className="mt-2 font-display text-4xl leading-none sm:text-5xl">
+              {formatDateSlash(summary.data.weekStart, false)} → {formatDateSlash(summary.data.weekEnd ?? summary.data.weekStart, false)}
+            </p>
+            <p className="mt-3 text-sm text-cream/70">
+              {summary.data.count} compra(s) de este ciclo · pendiente de la semana{' '}
+              {formatMoney(summary.data.pendingAmount)}
+            </p>
+          </section>
+        </>
+      ) : null}
+
+      <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-3xl bg-ink p-4 text-cream">
+          <p className="text-xs uppercase tracking-[0.16em] text-gold">Adeudado a proveedores</p>
+          <p className="mt-1 font-display text-3xl">{formatMoney(summary.data?.outstandingTotal)}</p>
+          <p className="mt-1 text-sm text-cream/70">Saldo total, no solo de esta semana</p>
+        </article>
         <article className="rounded-3xl bg-cream p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Total comprado</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Pagado en efectivo</p>
+          <p className="mt-1 font-display text-3xl">{formatMoney(summary.data?.paidThisWeek?.efectivo)}</p>
+          <p className="mt-1 text-sm text-ink-soft">Pagos a proveedores de este ciclo</p>
+        </article>
+        <article className="rounded-3xl bg-cream p-4">
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Pagado por transferencia</p>
+          <p className="mt-1 font-display text-3xl">{formatMoney(summary.data?.paidThisWeek?.transferencia)}</p>
+          <p className="mt-1 text-sm text-ink-soft">Pagos a proveedores de este ciclo</p>
+        </article>
+        <article className="rounded-3xl bg-cream p-4">
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Comprado esta semana</p>
           <p className="mt-1 font-display text-3xl">{formatMoney(summary.data?.totalCost)}</p>
-        </article>
-        <article className="rounded-3xl bg-cream p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Pagado</p>
-          <p className="mt-1 font-display text-3xl">{formatMoney(summary.data?.paidAmount)}</p>
-        </article>
-        <article className="rounded-3xl bg-cream p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Pendiente</p>
-          <p className="mt-1 font-display text-3xl">{formatMoney(summary.data?.pendingAmount)}</p>
+          <p className="mt-1 text-sm text-ink-soft">Costo de las compras del ciclo</p>
         </article>
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Proveedor, producto o factura" />
-        <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         <Select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}>
           <option value="">Todos los estados</option>
           <option value="PENDIENTE">Pendiente</option>
@@ -407,30 +441,6 @@ export function PurchasesPage() {
         </Select>
       </div>
       <div className="mb-6 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          className="min-h-11"
-          onClick={() => {
-            const week = businessWeekRange();
-            setFrom(week.from);
-            setTo(week.to);
-          }}
-        >
-          Esta semana
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="min-h-11"
-          onClick={() => {
-            const month = monthRange();
-            setFrom(month.from);
-            setTo(month.to);
-          }}
-        >
-          Este mes
-        </Button>
         <Button type="button" variant={hasPending ? 'secondary' : 'ghost'} className="min-h-11" onClick={() => setHasPending((value) => !value)}>
           Con saldo
         </Button>
@@ -443,8 +453,6 @@ export function PurchasesPage() {
           className="min-h-11"
           onClick={() => {
             setSearch('');
-            setFrom('');
-            setTo('');
             setSupplierFilter('');
             setProductFilter('');
             setPaymentStatus('');
@@ -512,8 +520,8 @@ export function PurchasesPage() {
         </div>
       ) : (
         <EmptyState
-          title="Sin compras"
-          description="Registrá una compra manual o generála desde el pedido semanal."
+          title="Sin compras en este ciclo"
+          description="No hay compras de jueves a miércoles en esta semana. Registrá una o recibila desde el pedido semanal."
         />
       )}
 

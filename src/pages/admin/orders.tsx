@@ -198,6 +198,31 @@ export function OrdersPage() {
           </div>
         </section>
       ) : null}
+      {cycle.data?.collected ? (
+        <section className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <article className="rounded-3xl bg-cream p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Cobrado en efectivo</p>
+            <p className="mt-1 font-display text-3xl">{formatMoney(cycle.data.collected.efectivo)}</p>
+            <p className="mt-1 text-sm text-ink-soft">Pagos de pedidos de este ciclo</p>
+          </article>
+          <article className="rounded-3xl bg-cream p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Cobrado por transferencia</p>
+            <p className="mt-1 font-display text-3xl">{formatMoney(cycle.data.collected.transferencia)}</p>
+            <p className="mt-1 text-sm text-ink-soft">Pagos de pedidos de este ciclo</p>
+          </article>
+          <article className="rounded-3xl bg-cream p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Total cobrado</p>
+            <p className="mt-1 font-display text-3xl">{formatMoney(cycle.data.collected.total)}</p>
+            {Number(cycle.data.collected.tarjeta) > 0 || Number(cycle.data.collected.otro) > 0 ? (
+              <p className="mt-1 text-sm text-ink-soft">
+                Incluye tarjeta y otros métodos, si los hay.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-ink-soft">Efectivo más transferencia</p>
+            )}
+          </article>
+        </section>
+      ) : null}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <Input placeholder="Cliente o teléfono" value={search} onChange={(e) => setSearch(e.target.value)} />
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
